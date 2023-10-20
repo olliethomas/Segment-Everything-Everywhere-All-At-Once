@@ -156,11 +156,11 @@ class XDecoder(nn.Module):
 
     @classmethod
     def from_config(cls, cfg, in_channels, lang_encoder, mask_classification, extra):
-        ret = {}
-
-        ret["lang_encoder"] = lang_encoder
-        ret["in_channels"] = in_channels
-        ret["mask_classification"] = mask_classification
+        ret = {
+            "lang_encoder": lang_encoder,
+            "in_channels": in_channels,
+            "mask_classification": mask_classification,
+        }
 
         enc_cfg = cfg['MODEL']['ENCODER']
         dec_cfg = cfg['MODEL']['DECODER']
@@ -198,7 +198,7 @@ class XDecoder(nn.Module):
         src = []
         pos = []
         size_list = []
-        
+
         # disable mask, it does not affect performance
         del mask
         for i in range(self.num_feature_levels):
@@ -216,12 +216,6 @@ class XDecoder(nn.Module):
         query_embed = self.query_embed.weight.unsqueeze(1).repeat(1, bs, 1)
         output = self.query_feat.weight.unsqueeze(1).repeat(1, bs, 1)
 
-        predictions_class = []
-        predictions_mask = []
-        predictions_bbox = []
-        predictions_caption = []
-        predictions_captioning = []
-        
         self_tgt_mask = None
         if self.training and task == 'vlp' and self.task_switch['captioning']:
             # output = torch.cat((output, self.query_feat_caping.weight.unsqueeze(1).repeat(1, bs, 1)), dim=0) # concat object query, class token and caption token.
@@ -248,12 +242,11 @@ class XDecoder(nn.Module):
         # prediction heads on learnable query features
         results = self.forward_prediction_heads(output, mask_features, attn_mask_target_size=size_list[0], task=task)
         attn_mask = results["attn_mask"]
-        predictions_class.append(results["outputs_class"])
-        predictions_mask.append(results["outputs_mask"])
-        predictions_bbox.append(results["outputs_bbox"])
-        predictions_caption.append(results["outputs_caption"])
-        predictions_captioning.append(results["outputs_captionting"])
-        
+        predictions_class = [results["outputs_class"]]
+        predictions_mask = [results["outputs_mask"]]
+        predictions_bbox = [results["outputs_bbox"]]
+        predictions_caption = [results["outputs_caption"]]
+        predictions_captioning = [results["outputs_captionting"]]
         for i in range(self.num_layers):
             level_index = i % self.num_feature_levels
             attn_mask[torch.where(attn_mask.sum(-1) == attn_mask.shape[-1])] = False
@@ -277,7 +270,7 @@ class XDecoder(nn.Module):
                 tgt_key_padding_mask=None,
                 query_pos=query_embed
             )
-            
+
             # FFN
             output = self.transformer_ffn_layers[i](
                 output
@@ -297,22 +290,31 @@ class XDecoder(nn.Module):
             predictions_captioning.append(results["outputs_captionting"])
 
         assert len(predictions_class) == self.num_layers + 1
-        if task == 'vlp':
-            out = {'pred_captionings': predictions_captioning[-1], 
-                   'pred_captions': predictions_caption[-1], 
-                   'aux_outputs': [{'pred_captionings': x, 'pred_captions': y } for x, y in zip(predictions_captioning[:-1], predictions_caption[:-1])]}
-            return out
-        else:
-            out = {
+        return (
+            {
+                'pred_captionings': predictions_captioning[-1],
+                'pred_captions': predictions_caption[-1],
+                'aux_outputs': [
+                    {'pred_captionings': x, 'pred_captions': y}
+                    for x, y in zip(
+                        predictions_captioning[:-1], predictions_caption[:-1]
+                    )
+                ],
+            }
+            if task == 'vlp'
+            else {
                 'pred_logits': predictions_class[-1],
                 'pred_masks': predictions_mask[-1],
                 'pred_boxes': predictions_bbox[-1],
                 'pred_captions': predictions_caption[-1],
                 'aux_outputs': self._set_aux_loss(
-                    predictions_class if self.mask_classification else None, predictions_mask, predictions_bbox, predictions_caption
-                )
+                    predictions_class if self.mask_classification else None,
+                    predictions_mask,
+                    predictions_bbox,
+                    predictions_caption,
+                ),
             }
-            return out
+        )
 
     def forward_captioning(self, x, mask_features, mask = None, target_queries = None, target_vlp = None, task='seg', extra={}):
         # x is a list of multi-scale feature

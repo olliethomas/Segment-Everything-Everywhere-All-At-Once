@@ -157,7 +157,7 @@ class GeneralizedXdecoder(nn.Module):
         # build model
         extra = {'task_switch': task_switch}
         backbone = build_backbone(cfg)
-        lang_encoder = build_language_encoder(cfg)        
+        lang_encoder = build_language_encoder(cfg)
         sem_seg_head = build_xdecoder_head(cfg, backbone.output_shape(), lang_encoder, extra)
 
         # building criterion
@@ -187,11 +187,11 @@ class GeneralizedXdecoder(nn.Module):
                 if isinstance(loss_weights[key], dict):
                     # HACK it should support bbox in the future
                     for key_, weight in loss_weights[key].items():
-                        weight_dict["loss_{}_{}_0".format(key, key_)] = weight # NOTE: hard code for segmentation that has multiple loss
+                        weight_dict[f"loss_{key}_{key_}_0"] = weight
                 else:
-                    weight_dict["loss_{}_0".format(key)] = loss_weights[key]
-        
-        # generate full weight dict and remove not computed layers. 
+                    weight_dict[f"loss_{key}_0"] = loss_weights[key]
+
+        # generate full weight dict and remove not computed layers.
         if deep_supervision:
             dec_layers = dec_cfg['DEC_LAYERS']
             aux_weight_dict = {}
@@ -199,7 +199,7 @@ class GeneralizedXdecoder(nn.Module):
                 for k, v in weight_dict.items():
                     if (i+1) > (top_x_layers[k.split('_')[1]] - 1):
                         continue
-                    aux_weight_dict.update({k.replace('_0', f"_{i+1}"): v})
+                    aux_weight_dict[k.replace('_0', f"_{i+1}")] = v
             weight_dict.update(aux_weight_dict)
 
         grd_weight = {'text': dec_cfg['GROUNDING']['TEXT_WEIGHT'], 'class': dec_cfg['GROUNDING']['CLASS_WEIGHT']}
@@ -355,11 +355,15 @@ class GeneralizedXdecoder(nn.Module):
                         elif _key == 'pred_captions':
                             _outputs[key][i][_key] = _value[:,:self.num_queries-1]
                             if self.task_switch['grounding']:
-                                _outputs[key][i]['pred_gtexts'] = _value[:,self.num_queries:2*self.num_queries-1]        
+                                _outputs[key][i]['pred_gtexts'] = _value[:,self.num_queries:2*self.num_queries-1]
         outputs = _outputs
 
-        extra = {'lang_logit': self.sem_seg_head.predictor.lang_encoder.logit_scale,
-                 'class_embeddings': getattr(self.sem_seg_head.predictor.lang_encoder, '{}_text_embeddings'.format('default'))}
+        extra = {
+            'lang_logit': self.sem_seg_head.predictor.lang_encoder.logit_scale,
+            'class_embeddings': getattr(
+                self.sem_seg_head.predictor.lang_encoder, 'default_text_embeddings'
+            ),
+        }
 
         # bipartite matching-based loss
         self.criterion.losses = self.losses['seg'] # seg criterion losses
@@ -383,22 +387,16 @@ class GeneralizedXdecoder(nn.Module):
         outputs = self.sem_seg_head(features, target_queries=None, target_vlp=targets_vlp, task='vlp', extra=extra)
 
         for key, value in outputs.items():
-            if key == 'pred_captionings':
-                outputs[key] = value
-            elif key == 'pred_captions':
-                # outputs[key] = value[:,-1:]
-                outputs[key] = value
-            elif key == 'aux_outputs':
+            if key == 'aux_outputs':
                 outputs[key] = []
                 for i in range(len(value)):
                     outputs[key] += [{}]
                     for _key, _value in value[i].items():
-                        if _key == 'pred_captions':
+                        if _key in ['pred_captions', 'pred_captionings']:
                             # outputs[key][i][_key] = _value[:,-1:]
                             outputs[key][i][_key] = _value
-                        elif _key == 'pred_captionings':
-                            outputs[key][i][_key] = _value
-
+            elif key in ['pred_captionings', 'pred_captions']:
+                outputs[key] = value
         self.criterion.losses = self.losses['vlp'] # seg criterion losses
         losses = self.criterion.forward_vlp(outputs, targets_vlp, extra)
         del outputs
@@ -417,7 +415,7 @@ class GeneralizedXdecoder(nn.Module):
     def evaluate(self, batched_inputs):
         images = [x["image"].to(self.device) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-        
+
         images = ImageList.from_tensors(images, self.size_divisibility)
         img_bs = images.tensor.shape[0]
 
@@ -427,8 +425,16 @@ class GeneralizedXdecoder(nn.Module):
 
         mask_cls_results = outputs["pred_logits"]
         mask_pred_results = outputs["pred_masks"]
-        box_pred_results = outputs["pred_boxes"] if self.task_switch['bbox'] else [None for i in range(len(mask_pred_results))]
-        caption_pred_results = outputs["pred_captions"] if self.task_switch['caption'] else [None for i in range(len(mask_pred_results))]
+        box_pred_results = (
+            outputs["pred_boxes"]
+            if self.task_switch['bbox']
+            else [None for _ in range(len(mask_pred_results))]
+        )
+        caption_pred_results = (
+            outputs["pred_captions"]
+            if self.task_switch['caption']
+            else [None for _ in range(len(mask_pred_results))]
+        )
 
         # upsample masks
         mask_pred_results = F.interpolate(
@@ -468,7 +474,7 @@ class GeneralizedXdecoder(nn.Module):
             if self.panoptic_on:
                 panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
                 processed_results[-1]["panoptic_seg"] = panoptic_r
-            
+
             # instance segmentation inference
             if self.instance_on:
                 if self.task_switch['bbox']:
@@ -574,13 +580,17 @@ class GeneralizedXdecoder(nn.Module):
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
         images = ImageList.from_tensors(images, self.size_divisibility)
         img_bs = images.tensor.shape[0]
-        
+
         targets = targets_grounding = queries_grounding = None
         features = self.backbone(images.tensor)
         outputs = self.sem_seg_head(features, target_queries=queries_grounding)
 
         mask_pred_results = outputs["pred_masks"]
-        caption_pred_results = outputs["pred_captions"] if self.task_switch['caption'] else [None for i in range(len(mask_pred_results))]
+        caption_pred_results = (
+            outputs["pred_captions"]
+            if self.task_switch['caption']
+            else [None for _ in range(len(mask_pred_results))]
+        )
 
         # upsample masks
         mask_pred_results = F.interpolate(
@@ -610,7 +620,10 @@ class GeneralizedXdecoder(nn.Module):
                     self.sem_seg_head.predictor.lang_encoder.get_text_embeddings(texts, name='grounding', prompt=False, is_eval=True)
                 elif mode == 'grounding_phrasecut':
                     self.sem_seg_head.predictor.lang_encoder.get_text_embeddings(texts, name='grounding', prompt=True, is_eval=False)
-                t_emb = getattr(self.sem_seg_head.predictor.lang_encoder, "{}_text_embeddings".format('grounding')).t()
+                t_emb = getattr(
+                    self.sem_seg_head.predictor.lang_encoder,
+                    'grounding_text_embeddings',
+                ).t()
                 v_emb = caption_pred_result[:-1]
                 v_emb = v_emb / (v_emb.norm(dim=-1, keepdim=True) + 1e-7)
                 vt_sim = v_emb @ t_emb
@@ -717,7 +730,7 @@ class GeneralizedXdecoder(nn.Module):
     def prepare_vlp_targets(self, batched_inputs, device):
         input_ids = []
         attention_mask = []
-        for cnt, x in enumerate(batched_inputs):
+        for x in batched_inputs:
             captions = x['captions']
             randid = random.randint(0, len(captions)-1)
             input_ids += x['tokens']['input_ids'][randid:randid+1]
@@ -730,11 +743,16 @@ class GeneralizedXdecoder(nn.Module):
 
         target_vlp = []
         for cnt, x in enumerate(batched_inputs):
-            target_dict = {}
-            target_dict["caption_tokens"] = lang_results['token_emb'][cnt:cnt+1]
-            target_dict["caption_proj"] = lang_results['class_emb'][cnt:cnt+1]
-            target_dict["caption_tokenids"] = lang_results['tokens']['input_ids'][cnt:cnt+1]
-            target_dict["caption_mask"] = lang_results['tokens']['attention_mask'][cnt:cnt+1]            
+            target_dict = {
+                "caption_tokens": lang_results['token_emb'][cnt : cnt + 1],
+                "caption_proj": lang_results['class_emb'][cnt : cnt + 1],
+                "caption_tokenids": lang_results['tokens']['input_ids'][
+                    cnt : cnt + 1
+                ],
+                "caption_mask": lang_results['tokens']['attention_mask'][
+                    cnt : cnt + 1
+                ],
+            }
             target_vlp.append(target_dict)
         return target_vlp
     
@@ -770,20 +788,23 @@ class GeneralizedXdecoder(nn.Module):
                 text = caption[rand_index]
                 nouns = caption_noun[rand_index]
                 noun_captions = [prompt_engineering(noun, topk=10000, suffix='.') for noun in nouns] + [text]
-                
+
                 self.sem_seg_head.predictor.lang_encoder.get_text_embeddings(noun_captions, is_eval=False, name='caption_noun', prompt=False)
-                ctext = getattr(self.sem_seg_head.predictor.lang_encoder, '{}_text_embeddings'.format('caption_noun'))
+                ctext = getattr(
+                    self.sem_seg_head.predictor.lang_encoder,
+                    'caption_noun_text_embeddings',
+                )
                 target_dict["captions"] = ctext
-                
+
                 target_dict["captions_hash"] = [(hash(st.stem(txt)) % 10**16) for txt in (nouns + [text])]
                 target_dict["labels_hash"] = [(hash(st.stem(COCO_PANOPTIC_CLASSES[label_id].replace('-other','').replace('-merged','').replace('-stuff',''))) % 10**16) for label_id in target_dict['labels']]
-                
+
             if self.task_switch['grounding']:
                 grd_masks = batch_per_image['groundings']['masks']
                 grd_texts = batch_per_image['groundings']['texts']
                 grd_hash = batch_per_image['groundings']['hash']
                 grd_task = batch_per_image['groundings']['mode']
-                
+
                 if len(grd_masks) == 0:
                     padded_masks = None
                 else:
@@ -793,7 +814,7 @@ class GeneralizedXdecoder(nn.Module):
                 gtext = self.sem_seg_head.predictor.lang_encoder.get_text_token_embeddings(grd_texts, name='grounding', token=False, norm=False)
                 token_emb = gtext['token_emb']
                 tokens = gtext['tokens']
-                
+
                 unique_hash_id = np.unique(grd_hash, return_index=True)[1]
                 selected_mask = np.zeros(len(grd_hash)).astype(np.bool)
                 selected_mask[unique_hash_id] = True
@@ -801,11 +822,11 @@ class GeneralizedXdecoder(nn.Module):
                 selected_token_emb = token_emb[selected_mask]
                 selected_attn_mask = tokens['attention_mask'][selected_mask]
                 query_emb = selected_token_emb[selected_attn_mask.bool()]
-                
+
                 class_idx = tokens['attention_mask'].sum(dim=-1) - 1
                 class_idx = torch.stack((torch.arange(len(class_idx), device=class_idx.device), class_idx)).tolist()
                 class_emb = token_emb[class_idx]
-                
+
                 target_dict['grounding_masks'] = padded_masks
                 target_dict['grounding_query_embs'] = query_emb
                 target_dict['grounding_class_embs'] = class_emb
@@ -821,8 +842,7 @@ class GeneralizedXdecoder(nn.Module):
         else:
             mask_cls = F.softmax(mask_cls, dim=-1)[..., :-1]
         mask_pred = mask_pred.sigmoid()
-        semseg = torch.einsum("qc,qhw->chw", mask_cls, mask_pred)
-        return semseg
+        return torch.einsum("qc,qhw->chw", mask_cls, mask_pred)
 
     def panoptic_inference(self, mask_cls, mask_pred):
         scores, labels = F.softmax(mask_cls, dim=-1).max(-1)
@@ -840,16 +860,13 @@ class GeneralizedXdecoder(nn.Module):
         panoptic_seg = torch.zeros((h, w), dtype=torch.int32, device=cur_masks.device)
         segments_info = []
 
-        current_segment_id = 0
-
-        if cur_masks.shape[0] == 0:
-            # We didn't detect any mask :(
-            return panoptic_seg, segments_info
-        else:
+        if cur_masks.shape[0] != 0:
             # take argmax
             cur_mask_ids = cur_prob_masks.argmax(0)
             stuff_memory_list = {}
             thing_dataset_id_to_contiguous_id = self.metadata.thing_dataset_id_to_contiguous_id if hasattr(self.metadata, 'thing_dataset_id_to_contiguous_id') else {}
+            current_segment_id = 0
+
             for k in range(cur_classes.shape[0]):
                 pred_class = cur_classes[k].item()
                 isthing = pred_class in thing_dataset_id_to_contiguous_id.values()
@@ -861,9 +878,8 @@ class GeneralizedXdecoder(nn.Module):
                     if mask_area / original_area < self.overlap_threshold:
                         continue
 
-                    # merge stuff regions
                     if not isthing:
-                        if int(pred_class) in stuff_memory_list.keys():
+                        if int(pred_class) in stuff_memory_list:
                             panoptic_seg[mask] = stuff_memory_list[int(pred_class)]
                             continue
                         else:
@@ -875,11 +891,12 @@ class GeneralizedXdecoder(nn.Module):
                     segments_info.append(
                         {
                             "id": current_segment_id,
-                            "isthing": bool(isthing),
+                            "isthing": isthing,
                             "category_id": int(pred_class),
                         }
                     )
-            return panoptic_seg, segments_info
+        # We didn't detect any mask :(
+        return panoptic_seg, segments_info
 
     def instance_inference(self, mask_cls, mask_pred, box_pred):
         # mask_pred is already processed to have the same shape as original input

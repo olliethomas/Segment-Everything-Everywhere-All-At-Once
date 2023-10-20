@@ -70,11 +70,11 @@ def convert_coco_poly_to_mask(segmentations, height, width):
         mask = torch.as_tensor(mask, dtype=torch.uint8)
         mask = mask.any(dim=2)
         masks.append(mask)
-    if masks:
-        masks = torch.stack(masks, dim=0)
-    else:
-        masks = torch.zeros((0, height, width), dtype=torch.uint8)
-    return masks
+    return (
+        torch.stack(masks, dim=0)
+        if masks
+        else torch.zeros((0, height, width), dtype=torch.uint8)
+    )
 
 # This is specifically designed for the COCO dataset.
 class COCOPanopticInteractiveDatasetMapper:
@@ -120,9 +120,7 @@ class COCOPanopticInteractiveDatasetMapper:
         """
         self.tfm_gens = tfm_gens
         logging.getLogger(__name__).info(
-            "[COCOPanopticNewBaselineDatasetMapper] Full TransformGens used in training: {}".format(
-                str(self.tfm_gens)
-            )
+            f"[COCOPanopticNewBaselineDatasetMapper] Full TransformGens used in training: {str(self.tfm_gens)}"
         )
 
         self.img_format = image_format
@@ -157,7 +155,7 @@ class COCOPanopticInteractiveDatasetMapper:
             else:
                 tokenizer = build_tokenizer(cfg['MODEL']['TEXT'])
 
-        ret = {
+        return {
             "is_train": is_train,
             "tfm_gens": tfm_gens,
             "image_format": cfg['INPUT']['FORMAT'],
@@ -171,7 +169,6 @@ class COCOPanopticInteractiveDatasetMapper:
             "max_token_num": max_token_num,
             "tokenizer": tokenizer,
         }
-        return ret
 
     def __call__(self, dataset_dict):
         """
@@ -201,7 +198,7 @@ class COCOPanopticInteractiveDatasetMapper:
             cap_similarity = np.array([self.caption_similarity[noun][0] for noun in nouns])
             captions_noun.append(nouns[cap_similarity < self.caption_thres].tolist())
         dataset_dict["captions_noun"] = captions_noun
-        
+
         if not self.is_train:
             # USER: Modify this if you want to keep them for some reason.
             dataset_dict.pop("annotations", None)
@@ -222,18 +219,18 @@ class COCOPanopticInteractiveDatasetMapper:
             classes = []
             masks = []
             for segment_info in segments_info:
-                class_id = segment_info["category_id"]
                 if not segment_info["iscrowd"]:
+                    class_id = segment_info["category_id"]
                     classes.append(class_id)
                     masks.append(pan_seg_gt == segment_info["id"])
-                        
+
             is_things = [COCO_CATEGORIES[idx]['isthing'] for idx in classes]
             classes = np.array(classes)
             is_things = np.array(is_things)
             instances.gt_classes = torch.tensor(classes, dtype=torch.int64)
             instances.is_things = torch.tensor(is_things, dtype=torch.int64)
 
-            if len(masks) == 0:
+            if not masks:
                 # Some image does not have annotation (all ignored)
                 masks = BitMasks(torch.zeros((0, pan_seg_gt.shape[-2], pan_seg_gt.shape[-1])))
                 instances.gt_masks = masks
@@ -324,7 +321,7 @@ class COCOPanopticInteractiveDatasetMapper:
                     hash_grd = hash_grd[selected_mask]
                     masks_grd = masks_grd[selected_mask]
                     texts_grd = [prompt_engineering(text.replace('-other','').replace('-merged','').replace('-stuff',''), topk=10000, suffix='.') \
-                                        for text in texts_grd]
+                                            for text in texts_grd]
             groundings = {'masks': masks_grd, 'texts': texts_grd, 'mode': mode, 'hash': hash_grd}
             dataset_dict["groundings"] = groundings
 

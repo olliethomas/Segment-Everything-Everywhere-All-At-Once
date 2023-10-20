@@ -144,9 +144,7 @@ class SetCriterion(nn.Module):
 
         if indices is None or len(targets) == 0:
             loss_ce = outputs['pred_logits'].sum() * 0.0
-            losses = {"loss_mask_ce_0": loss_ce}
-            return losses
-
+            return {"loss_mask_ce_0": loss_ce}
         assert "pred_logits" in outputs
         src_logits = outputs["pred_logits"].type(self.empty_weight.dtype)
 
@@ -165,8 +163,7 @@ class SetCriterion(nn.Module):
             empty_weight[self.num_classes] = self.eos_coef
 
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, empty_weight)
-        losses = {"loss_mask_ce_0": loss_ce}
-        return losses
+        return {"loss_mask_ce_0": loss_ce}
 
     def loss_labels_openimage(self, outputs, targets, indices, num_masks, layer_id, extra):
         """Classification loss (NLL)
@@ -179,12 +176,9 @@ class SetCriterion(nn.Module):
 
         if indices is None or len(targets) == 0 or (len(targets) > 0 and len(targets[0]['labels']) == 0):
             loss_ce = outputs['pred_captions'].sum() * 0.0
-            losses = {"loss_openimage_ce_0": loss_ce}
-            return losses
-
+            return {"loss_openimage_ce_0": loss_ce}
         # compute i2t loss
         loss_openimage_ce = 0
-        losses = {}
         for b in range(len(indices)):
             pred_logit = outputs["pred_logits"][b][indices[b][0]]
             gt_logit = torch.zeros_like(pred_logit)
@@ -192,8 +186,7 @@ class SetCriterion(nn.Module):
             gt_logit[select_idx] = 1
             loss_openimage_ce += torch.sum(-gt_logit * F.log_softmax(pred_logit, dim=-1), dim=-1).mean()
         loss_openimage_ce = loss_openimage_ce / len(indices)
-        losses.update({"loss_openimage_ce_0": loss_openimage_ce})
-        return losses
+        return {"loss_openimage_ce_0": loss_openimage_ce}
 
     def loss_itc(self, outputs, targets, indices, num_masks, layer_id, extra):
         if layer_id >= self.top_x_layers['retrieval']:
@@ -228,8 +221,7 @@ class SetCriterion(nn.Module):
         # compute loss
         loss_contrast_fine = (loss_contrast_fine_vt * 0.7 + loss_contrast_fine_tv * 0.3)
 
-        losses = {"loss_retrieval_decoder_0": loss_contrast + loss_contrast_fine * 0.5}
-        return losses
+        return {"loss_retrieval_decoder_0": loss_contrast + loss_contrast_fine * 0.5}
 
     def loss_captionings(self, outputs, targets, indices, num_masks, layer_id, extra):
         if layer_id >= self.top_x_layers['captioning']:
@@ -250,16 +242,15 @@ class SetCriterion(nn.Module):
         # loss_caption = F.cross_entropy(pred_captions_gen.transpose(1,2) * logit_scale, target_captions_gen, reduction='none')
         loss_caption = F.cross_entropy(pred_captions_gen.transpose(1,2), target_captions_gen, reduction='none')
         loss_caption = (loss_caption * target_captions_gen_mask).sum() / (target_captions_gen_mask.sum() + 1)
-        losses = {"loss_captioning_0": loss_caption}
-        return losses
+        return {"loss_captioning_0": loss_caption}
 
     def loss_captions(self, outputs, targets, indices, num_masks, layer_id, extra):
         if layer_id >= self.top_x_layers['caption']:
             return {"loss_caption_0": 0}
         matched_tokens = [m[0] for m in indices]
-        t_emb_class = torch.cat([extra['class_embeddings'][targets[bs]['labels'][m[1]]] for bs, m in enumerate(indices)])    
+        t_emb_class = torch.cat([extra['class_embeddings'][targets[bs]['labels'][m[1]]] for bs, m in enumerate(indices)])
         t_hash_class = torch.cat([torch.tensor(targets[bs]['labels_hash'])[m[1]] for bs, m in enumerate(indices)])
-        
+
         # pred_captions denotes all unmatched object queries.
         unmatched_pred_captions = []
         matched_pred_captions = []
@@ -286,11 +277,9 @@ class SetCriterion(nn.Module):
         unmatched_pred_captions, _ = nested_tensor_from_tensor_list(unmatched_pred_captions).decompose()
         v_emb = unmatched_pred_captions[src_idx]
         v_emb = v_emb / (v_emb.norm(dim=-1, keepdim=True) + 1e-7)
-        
-        loss_contrast = ql_multi_contrastive_loss(torch.cat((v_emb, v_emb_class)), torch.cat((t_emb, t_emb_class)), torch.cat((t_hash, t_hash_class)), temperature=extra['lang_logit'])
-        losses = {"loss_caption_0": loss_contrast}
 
-        return losses
+        loss_contrast = ql_multi_contrastive_loss(torch.cat((v_emb, v_emb_class)), torch.cat((t_emb, t_emb_class)), torch.cat((t_hash, t_hash_class)), temperature=extra['lang_logit'])
+        return {"loss_caption_0": loss_contrast}
 
     def loss_masks(self, outputs, targets, indices, num_masks, layer_id, extra):
         """Compute the losses related to the masks: the focal loss and the dice loss.
@@ -302,9 +291,7 @@ class SetCriterion(nn.Module):
         assert "pred_masks" in outputs
         if indices is None or len(targets) == 0:
             loss = outputs['pred_masks'].sum() * 0.0
-            losses = {"loss_mask_bce_0": loss, "loss_mask_dice_0": loss}
-            return losses
-
+            return {"loss_mask_bce_0": loss, "loss_mask_dice_0": loss}
         src_idx = self._get_src_permutation_idx(indices)
         tgt_idx = self._get_tgt_permutation_idx(indices)
         src_masks = outputs["pred_masks"]
@@ -318,7 +305,7 @@ class SetCriterion(nn.Module):
         # N x 1 x H x W
         src_masks = src_masks[:, None]
         target_masks = target_masks[:, None]
-        
+
         with torch.no_grad():
             # sample point_coords
             point_coords = get_uncertain_point_coords_with_randomness(
@@ -356,7 +343,7 @@ class SetCriterion(nn.Module):
         """
         assert "pred_gmasks" in outputs
         assert "pred_gtexts" in outputs
-        
+
         if layer_id >= self.top_x_layers['grounding']:
             return {"loss_grounding_bce_0": 0, "loss_grounding_dice_0": 0, "loss_grounding_ce_0": 0}
 
@@ -369,12 +356,12 @@ class SetCriterion(nn.Module):
         for b in range(len(indices)):
             t_emb = targets[b]['grounding_class_embs']
             v_emb = outputs["pred_gtexts"][b]
-            
+
             t_emb = t_emb / (t_emb.norm(dim=-1, keepdim=True) + 1e-7)
             v_emb = v_emb / (v_emb.norm(dim=-1, keepdim=True) + 1e-7)            
 
             out_prob = vl_similarity(v_emb, t_emb, temperature=extra['lang_logit'])
-            pred_logits += [out_prob]            
+            pred_logits += [out_prob]
         outputs['pred_logits'] = pred_logits
 
         indices = self.matcher(outputs, targets, mode='grounding', extra={'temperature':extra['lang_logit']})
@@ -391,7 +378,7 @@ class SetCriterion(nn.Module):
         # N x 1 x H x W
         src_masks = src_masks[:, None]
         target_masks = target_masks[:, None]
-        
+
         with torch.no_grad():
             # sample point_coords
             point_coords = get_uncertain_point_coords_with_randomness(
@@ -461,7 +448,7 @@ class SetCriterion(nn.Module):
             gt_logit = gt_logit @ hash_table
             loss_grd_ce += self.grounding_weight[task]*torch.sum(-gt_logit.t() * F.log_softmax(pred_logit.t(), dim=-1), dim=-1).mean()
         loss_grd_ce = loss_grd_ce / len(indices)
-        losses.update({"loss_grounding_ce_0": loss_grd_ce})
+        losses["loss_grounding_ce_0"] = loss_grd_ce
         del src_masks
         del target_masks
         return losses
@@ -532,7 +519,7 @@ class SetCriterion(nn.Module):
         # loss_spa_ce_neg = (torch.sum(-gt_logit * F.log_softmax(pred_logit, dim=-1), dim=-1)*neg_mask).sum() / (neg_mask.sum()+1e-6)
 
         # recompute a keep index with matched tgt
-        stack_gt_mask = nn.utils.rnn.pad_sequence(gt_masks, padding_value=-1).transpose(0,1)[tgt_idx]        
+        stack_gt_mask = nn.utils.rnn.pad_sequence(gt_masks, padding_value=-1).transpose(0,1)[tgt_idx]
         bs,_,_ = stack_gt_mask.shape
         target_masks = stack_gt_mask
         stack_gt_mask = stack_gt_mask.view(bs,-1).sum(dim=-1)
@@ -637,7 +624,7 @@ class SetCriterion(nn.Module):
         }
 
         # losses.update({"loss_spatial_ce_0": loss_spa_ce_pos + loss_spa_ce_neg})
-        losses.update({"loss_spatial_ce_0": loss_spa_ce_pos})
+        losses["loss_spatial_ce_0"] = loss_spa_ce_pos
 
         del src_masks
         del target_masks
@@ -655,14 +642,12 @@ class SetCriterion(nn.Module):
 
         if indices is None or len(targets) == 0:
             loss = outputs['pred_boxes'].sum() * 0.0
-            losses = {"loss_bbox_0": loss, "loss_giou_0": loss}
-            return losses
-
+            return {"loss_bbox_0": loss, "loss_giou_0": loss}
         src_idx = self._get_src_permutation_idx(indices)
         tgt_idx = self._get_tgt_permutation_idx(indices)
         src_boxes = outputs["pred_boxes"]
         src_boxes = src_boxes[src_idx].sigmoid()
-        
+
         target_boxes = [t['boxes'] for t in targets]
         max_size = _max_by_axis([list(box.shape) for box in target_boxes])
         max_size = [len(target_boxes)] + max_size
@@ -681,9 +666,7 @@ class SetCriterion(nn.Module):
         # target_isthings = empty_lab[tgt_idx]
 
         loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
-        losses = {}
-        losses['loss_bbox_0'] = loss_bbox.sum() / num_boxes
-        
+        losses = {'loss_bbox_0': loss_bbox.sum() / num_boxes}
         loss_giou = 1 - torch.diag(box_ops.generalized_box_iou(
             box_ops.box_cxcywh_to_xyxy(src_boxes),
             box_ops.box_cxcywh_to_xyxy(target_boxes)))
@@ -788,7 +771,7 @@ class SetCriterion(nn.Module):
         """
         # Compute all the requested losses
         losses = {}
-        indices = [[] for i in range(len(targets))]
+        indices = [[] for _ in range(len(targets))]
 
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_masks = sum(len(t["grounding_masks"]) for t in targets) + 1e-7
@@ -859,16 +842,16 @@ class SetCriterion(nn.Module):
         return losses
 
     def __repr__(self):
-        head = "Criterion " + self.__class__.__name__
+        head = f"Criterion {self.__class__.__name__}"
         body = [
             "matcher: {}".format(self.matcher.__repr__(_repr_indent=8)),
-            "losses: {}".format(self.losses),
-            "weight_dict: {}".format(self.weight_dict),
-            "num_classes: {}".format(self.num_classes),
-            "eos_coef: {}".format(self.eos_coef),
-            "num_points: {}".format(self.num_points),
-            "oversample_ratio: {}".format(self.oversample_ratio),
-            "importance_sample_ratio: {}".format(self.importance_sample_ratio),
+            f"losses: {self.losses}",
+            f"weight_dict: {self.weight_dict}",
+            f"num_classes: {self.num_classes}",
+            f"eos_coef: {self.eos_coef}",
+            f"num_points: {self.num_points}",
+            f"oversample_ratio: {self.oversample_ratio}",
+            f"importance_sample_ratio: {self.importance_sample_ratio}",
         ]
         _repr_indent = 4
         lines = [head] + [" " * _repr_indent + line for line in body]

@@ -58,7 +58,7 @@ class Point:
         rand_masks = []
         for i in range(0, len(non_zero_idx)):
             rand_mask = torch.zeros(view_mask.shape) # init rand mask
-            rand_mask[non_zero_idx[0:i+1]] = idx[0:i+1] # get non zero place to zero
+            rand_mask[non_zero_idx[:i+1]] = idx[:i+1]
             # struct = ndimage.generate_binary_structure(2, 2)
             # rand_mask = torch.from_numpy((ndimage.binary_dilation(rand_mask.reshape(h, w).numpy(), structure=struct, iterations=5).astype(rand_mask.numpy().dtype)))
             rand_masks += [rand_mask.reshape(h, w)]

@@ -21,14 +21,10 @@ def is_dist_initialized():
     return torch.distributed.is_initialized()
 
 def get_world_size():
-    if is_dist_initialized():
-        return torch.distributed.get_world_size()
-    return 1
+    return torch.distributed.get_world_size() if is_dist_initialized() else 1
 
 def get_rank():
-    if is_dist_initialized():
-        return dist.get_rank()
-    return 0
+    return dist.get_rank() if is_dist_initialized() else 0
 
 def all_gather_grad(x):
     if get_world_size() > 1:
@@ -51,9 +47,9 @@ def vl_multilabel_contrastive_loss(image_feat, text_feat, temperature=1):
     # [B, L2, C]
     # text_feat = F.normalize(text_feat, dim=-1)
     # HACK: normalize outside
-    
+
     # [B, L1, L2]
-    dist_per_img = image_feat @ rearrange(text_feat, 'b l c -> b c l')    
+    dist_per_img = image_feat @ rearrange(text_feat, 'b l c -> b c l')
     # [B, L2, L1]
     dist_per_text = text_feat @ rearrange(image_feat, 'b l c -> b c l')
 
@@ -94,8 +90,7 @@ def vl_multilabel_contrastive_loss(image_feat, text_feat, temperature=1):
     loss_img = soft_cross_entropy(logit_scale * logits_per_img, labels_per_img)
     loss_text = soft_cross_entropy(logit_scale * logits_per_text, labels_per_text)
 
-    loss = 0.5 * (loss_img + loss_text)
-    return loss
+    return 0.5 * (loss_img + loss_text)
 
 def vl_contrastive_loss(image_feat, text_feat, temperature=1):
     # if image_id or text_id is None, it should be None across all GPUs
@@ -140,12 +135,7 @@ def all_gather_pickle(data, device):
     size_list = [int(size.item()) for size in size_list]
     max_size = max(size_list)
 
-    # receiving Tensor from all ranks
-    # we pad the tensor because torch all_gather does not support
-    # gathering tensors of different shapes
-    tensor_list = []
-    for _ in size_list:
-        tensor_list.append(torch.ByteTensor(size=(max_size,)).cuda())
+    tensor_list = [torch.ByteTensor(size=(max_size,)).cuda() for _ in size_list]
     if local_size != max_size:
         padding = torch.ByteTensor(size=(max_size - local_size,)).cuda()
         tensor = torch.cat((tensor, padding), dim=0)
@@ -195,7 +185,7 @@ def ql_multi_contrastive_loss(image_feat, text_feat, text_hash, temperature=1):
 
     text_hash_batch = all_gather_pickle(text_hash, text_feat.device)
     text_hash_all = torch.cat(text_hash_batch)
-    
+
     text_hash_all_unique = torch.unique(text_hash_all).tolist()
     gt = torch.zeros((image_feat.shape[0], len(text_hash_all_unique)), device=text_feat.device)
     text_hash_all = text_hash_all.tolist()
@@ -203,15 +193,14 @@ def ql_multi_contrastive_loss(image_feat, text_feat, text_hash, temperature=1):
 
     for idx, txt in enumerate(text_hash_all):
         gt[idx][text_hash_all_unique.index(txt)] = 1
-    
+
     logits = torch.matmul(image_feat, text_feat_unique.t())
     logits = logits*temperature.exp().clamp(max=100)
-    
+
     loss_img = soft_cross_entropy(logits, gt)
     loss_text = soft_cross_entropy(logits.t(), gt.t() / gt.t().sum(-1, keepdim=True))
 
-    loss = 0.7 * loss_img + 0.3 * loss_text
-    return loss
+    return 0.7 * loss_img + 0.3 * loss_text
 
 def image_text_contrastive_loss_queue(image_feat_inp, text_feat_inp, lang_enc, training):
     # add the following 4 lines

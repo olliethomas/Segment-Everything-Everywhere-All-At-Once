@@ -141,7 +141,7 @@ def get_random_stroke_control_points(
     angle = np.random.uniform(0, 2 * np.pi)
     speed = np.random.uniform(0, maxHeadSpeed)
 
-    for i in range(numVertex):
+    for _ in range(numVertex):
         speed, angle = random_accelerate((speed, angle), maxHeadAcceleration)
         speed = np.clip(speed, 0, maxHeadSpeed)
 
@@ -195,7 +195,7 @@ def get_random_walk_mask(imageWidth=320, imageHeight=180, length=None):
     y = random.randint(0, imageWidth - 1)
     x_list = []
     y_list = []
-    for i in range(length):
+    for _ in range(length):
         r = random.randint(0, len(action_list) - 1)
         x = np.clip(x + action_list[r][0], a_min=0, a_max=imageHeight - 1)
         y = np.clip(y + action_list[r][1], a_min=0, a_max=imageWidth - 1)

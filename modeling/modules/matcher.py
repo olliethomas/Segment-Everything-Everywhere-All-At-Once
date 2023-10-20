@@ -34,8 +34,7 @@ def batch_dice_loss(inputs: torch.Tensor, targets: torch.Tensor):
     inputs = inputs.flatten(1)
     numerator = 2 * torch.einsum("nc,mc->nm", inputs, targets)
     denominator = inputs.sum(-1)[:, None] + targets.sum(-1)[None, :]
-    loss = 1 - (numerator + 1) / (denominator + 1)
-    return loss
+    return 1 - (numerator + 1) / (denominator + 1)
 
 
 batch_dice_loss_jit = torch.jit.script(
@@ -469,7 +468,7 @@ class HungarianMatcher(nn.Module):
             v_emb[b] = v_emb[b] / (v_emb[b].norm(dim=-1, keepdim=True) + 1e-7)
             num_queries = len(v_emb[b])
             out_prob = vl_similarity(v_emb[b][None,], t_emb, temperature=extra['temperature']).softmax(-1)[0]
-            tgt_ids = [idx for idx in range(caption_target_count[b], caption_target_count[b+1])]
+            tgt_ids = list(range(caption_target_count[b], caption_target_count[b+1]))
 
             # Compute the classification cost. Contrary to the loss, we don't use the NLL,
             # but approximate it in 1 - proba[target class].
@@ -498,14 +497,14 @@ class HungarianMatcher(nn.Module):
         t_emb = torch.cat([t['captions'] for t in targets])
         v_emb = outputs['unmatched_pred_captions']
         caption_target_count = np.cumsum([0] + [len(t['captions']) for t in targets])
-        
+
         # Iterate through batch size
         for b in range(bs):
             v_emb[b] = v_emb[b] / (v_emb[b].norm(dim=-1, keepdim=True) + 1e-7)
             num_queries = len(v_emb[b])
-            
+
             out_prob = vl_similarity(v_emb[b][None,], t_emb, temperature=extra['temperature']).softmax(-1)[0]
-            tgt_ids = [idx for idx in range(caption_target_count[b], caption_target_count[b+1])]
+            tgt_ids = list(range(caption_target_count[b], caption_target_count[b+1]))
 
             # Compute the classification cost. Contrary to the loss, we don't use the NLL,
             # but approximate it in 1 - proba[target class].
@@ -515,7 +514,7 @@ class HungarianMatcher(nn.Module):
             out_mask = outputs["pred_masks"][b]  # [num_queries, H_pred, W_pred]
             # gt masks are already padded when preparing target
             tgt_mask = targets[b]["masks"].to(out_mask)
-            
+
             out_mask = out_mask[:, None]
             tgt_mask = tgt_mask[:, None]
             # all masks share the same set of points for efficient matching!
@@ -584,20 +583,20 @@ class HungarianMatcher(nn.Module):
         elif mode == 'spatial':
             return self.spatial_forward(outputs, targets, extra)
         elif mode == 'spatial_pn':
-            return self.spatial_forward_pn(outputs, targets, extra)            
+            return self.spatial_forward_pn(outputs, targets, extra)
         elif mode == 'caption_womask':
             return self.caption_forward_womask(outputs, targets, extra)
         elif mode == 'caption_wmask':
             return self.caption_forward_wmask(outputs, targets, extra)
         else:
-            assert False, "Mode {} is not supported.".format(mode)
+            assert False, f"Mode {mode} is not supported."
 
     def __repr__(self, _repr_indent=4):
-        head = "Matcher " + self.__class__.__name__
+        head = f"Matcher {self.__class__.__name__}"
         body = [
-            "cost_class: {}".format(self.cost_class),
-            "cost_mask: {}".format(self.cost_mask),
-            "cost_dice: {}".format(self.cost_dice),
+            f"cost_class: {self.cost_class}",
+            f"cost_mask: {self.cost_mask}",
+            f"cost_dice: {self.cost_dice}",
         ]
         lines = [head] + [" " * _repr_indent + line for line in body]
         return "\n".join(lines)

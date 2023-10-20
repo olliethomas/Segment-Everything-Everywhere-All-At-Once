@@ -28,11 +28,11 @@ class ShapeSampler(nn.Module):
         candidate_names = cfg['STROKE_SAMPLER']['CANDIDATE_NAMES']
 
         if mode == 'hack_train':
-            candidate_classes = [getattr(sys.modules[__name__], class_name)(cfg, True) for class_name in candidate_names]        
+            candidate_classes = [getattr(sys.modules[__name__], class_name)(cfg, True) for class_name in candidate_names]
         else:
             # overwrite condidate_prob
             if not is_train:
-                candidate_probs = [0.0 for x in range(len(candidate_names))]
+                candidate_probs = [0.0 for _ in range(len(candidate_names))]
                 candidate_probs[candidate_names.index(mode)] = 1.0
             candidate_classes = [getattr(sys.modules[__name__], class_name)(cfg, is_train) for class_name in candidate_names]
 
@@ -52,8 +52,8 @@ class ShapeSampler(nn.Module):
             gt_masks = torch.zeros(masks.shape[-2:]).bool()
             rand_masks = torch.zeros(masks.shape[-2:]).bool()
             return {'gt_masks': gt_masks[None,:], 'rand_shape': torch.stack([rand_masks]), 'types': ['none']}
-        indices = [x for x in range(len(masks))]
- 
+        indices = list(range(len(masks)))
+
         if self.is_train:
             random.shuffle(indices)
             candidate_mask = masks[indices[:self.max_candidate]]
@@ -61,7 +61,7 @@ class ShapeSampler(nn.Module):
         else:
             candidate_mask = masks
             candidate_box = boxes
-        
+
         draw_funcs = random.choices(self.shape_candidate, weights=self.shape_prob, k=len(candidate_mask))
         rand_shapes = [d.draw(x,y) for d,x,y in zip(draw_funcs, candidate_mask, candidate_box)]
         types = [repr(x) for x in draw_funcs]

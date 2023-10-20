@@ -50,8 +50,7 @@ def main(args=None):
 
     model = BaseModel(opt, build_model(opt)).from_pretrained(pretrained_pth).eval().cuda()
 
-    t = []
-    t.append(transforms.Resize(800, interpolation=Image.BICUBIC))
+    t = [transforms.Resize(800, interpolation=Image.BICUBIC)]
     transform = transforms.Compose(t)
 
     thing_classes = ["owl"]

@@ -89,8 +89,7 @@ class Scribble:
         rand_mask = get_mask_by_input_strokes(
             init_points=points,
             imageWidth=w, imageHeight=h, nStroke=len(points), **preset)[None,]
-        rand_masks = (~torch.from_numpy(rand_mask)) * mask
-        return rand_masks
+        return (~torch.from_numpy(rand_mask)) * mask
 
     def __repr__(self,):
         return 'scribble'

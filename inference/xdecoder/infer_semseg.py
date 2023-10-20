@@ -48,8 +48,7 @@ def main(args=None):
 
     model = BaseModel(opt, build_model(opt)).from_pretrained(pretrained_pth).eval().cuda()
 
-    t = []
-    t.append(transforms.Resize(512, interpolation=Image.BICUBIC))
+    t = [transforms.Resize(512, interpolation=Image.BICUBIC)]
     transform = transforms.Compose(t)
 
     stuff_classes = ['zebra','antelope','giraffe','ostrich','sky','water','grass','sand','tree']

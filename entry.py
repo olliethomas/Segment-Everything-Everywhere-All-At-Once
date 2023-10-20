@@ -56,8 +56,8 @@ def main(args=None):
     if opt['TRAINER'] == 'xdecoder':
         from trainer import XDecoder_Trainer as Trainer
     else:
-        assert False, "The trainer type: {} is not defined!".format(opt['TRAINER'])
-    
+        assert False, f"The trainer type: {opt['TRAINER']} is not defined!"
+
     trainer = Trainer(opt)
     os.environ['TORCH_DISTRIBUTED_DEBUG']='DETAIL'
 

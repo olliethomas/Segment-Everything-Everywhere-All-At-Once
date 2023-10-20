@@ -157,7 +157,7 @@ class GeneralizedSEEM(nn.Module):
 
         extra = {'task_switch': task_switch}
         backbone = build_backbone(cfg)
-        lang_encoder = build_language_encoder(cfg)        
+        lang_encoder = build_language_encoder(cfg)
         sem_seg_head = build_xdecoder_head(cfg, backbone.output_shape(), lang_encoder, extra=extra)
 
         # building criterion
@@ -188,11 +188,11 @@ class GeneralizedSEEM(nn.Module):
                 if isinstance(loss_weights[key], dict):
                     # HACK it should support bbox in the future
                     for key_, weight in loss_weights[key].items():
-                        weight_dict["loss_{}_{}_0".format(key, key_)] = weight # NOTE: hard code for segmentation that has multiple loss
+                        weight_dict[f"loss_{key}_{key_}_0"] = weight
                 else:
-                    weight_dict["loss_{}_0".format(key)] = loss_weights[key]
+                    weight_dict[f"loss_{key}_0"] = loss_weights[key]
 
-        # generate full weight dict and remove not computed layers. 
+        # generate full weight dict and remove not computed layers.
         if deep_supervision:
             dec_layers = dec_cfg['DEC_LAYERS']
             aux_weight_dict = {}
@@ -200,7 +200,7 @@ class GeneralizedSEEM(nn.Module):
                 for k, v in weight_dict.items():
                     if (i+1) > (top_x_layers[k.split('_')[1]] - 1):
                         continue
-                    aux_weight_dict.update({k.replace('_0', f"_{i+1}"): v})
+                    aux_weight_dict[k.replace('_0', f"_{i+1}")] = v
             weight_dict.update(aux_weight_dict)
 
         grd_weight = {'text': dec_cfg['GROUNDING']['TEXT_WEIGHT'], 'class': dec_cfg['GROUNDING']['CLASS_WEIGHT']}
@@ -354,16 +354,20 @@ class GeneralizedSEEM(nn.Module):
             with torch.no_grad():
                 # generate random integeter between [0,3]
                 rand_iter_num = random.randint(0, self.train_max_iter)
-                for i in range(rand_iter_num):
+                for _ in range(rand_iter_num):
                     outputs = self.sem_seg_head.predictor(multi_scale_features, mask_features, extra=extra, task='spatial')
                     extra.update(outputs)
                     extra.update(self.prepare_next_spaital_mask(extra, batched_inputs))
 
         outputs = self.sem_seg_head.predictor(multi_scale_features, mask_features, extra=extra, task='seg')
 
-        extra = {'lang_logit': self.sem_seg_head.predictor.lang_encoder.logit_scale,
-                 'class_embeddings': getattr(self.sem_seg_head.predictor.lang_encoder, '{}_text_embeddings'.format('default')),
-                 'false_positive_mask': extra['false_positive_mask']}
+        extra = {
+            'lang_logit': self.sem_seg_head.predictor.lang_encoder.logit_scale,
+            'class_embeddings': getattr(
+                self.sem_seg_head.predictor.lang_encoder, 'default_text_embeddings'
+            ),
+            'false_positive_mask': extra['false_positive_mask'],
+        }
         # bipartite matching-based loss
         self.criterion.losses = self.losses['seg'] # seg criterion losses
 
@@ -378,7 +382,7 @@ class GeneralizedSEEM(nn.Module):
     def evaluate(self, batched_inputs):
         images = [x["image"].to(self.device) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-        
+
         images = ImageList.from_tensors(images, self.size_divisibility)
         img_bs = images.tensor.shape[0]
 
@@ -388,7 +392,11 @@ class GeneralizedSEEM(nn.Module):
 
         mask_cls_results = outputs["pred_logits"]
         mask_pred_results = outputs["pred_masks"]
-        box_pred_results = outputs["pred_boxes"] if self.task_switch['bbox'] else [None for i in range(len(mask_pred_results))]
+        box_pred_results = (
+            outputs["pred_boxes"]
+            if self.task_switch['bbox']
+            else [None for _ in range(len(mask_pred_results))]
+        )
 
         # upsample masks
         mask_pred_results = F.interpolate(
@@ -426,7 +434,7 @@ class GeneralizedSEEM(nn.Module):
             if self.panoptic_on:
                 panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
                 processed_results[-1]["panoptic_seg"] = panoptic_r
-            
+
             # instance segmentation inference
             if self.instance_on:
                 if self.task_switch['bbox']:
@@ -470,7 +478,7 @@ class GeneralizedSEEM(nn.Module):
             pos_masks = ImageList.from_tensors(pos_masks, self.size_divisibility).tensor.unbind(0)
 
             neg_masks = [(x['spatial_query']['rand_shape'].to(self.device) & False)[:,0] for x in batched_inputs]
-    
+
             neg_masks = ImageList.from_tensors(neg_masks, self.size_divisibility).tensor.unbind(0)
             extra.update({'spatial_query_pos_mask': pos_masks, 'spatial_query_neg_mask': neg_masks})
         elif self.interactive_mode == 'random':
@@ -499,7 +507,7 @@ class GeneralizedSEEM(nn.Module):
             ious = get_iou(gt_smask, pred_smask_all)
             all_batch_shape_iou += [ious]
             if (ious > 0.9).sum() == len(ious):
-                all_batch_shape_iou += [ious for j in range(self.interactive_iter-i-1)]
+                all_batch_shape_iou += [ious for _ in range(self.interactive_iter-i-1)]
                 break
             if self.interactive_mode in ['best', 'best_random']:
                 extra.update(self.prepare_next_spaital_mask(extra, batched_inputs, mode=self.interactive_mode))
@@ -508,9 +516,10 @@ class GeneralizedSEEM(nn.Module):
             else:
                 assert False, "invalid interactive mode"
         all_batch_shape_iou = torch.stack(all_batch_shape_iou)
-        processed_results = [{"mask_iou": all_batch_shape_iou[:,i]} for i in range(len(all_batch_shape_iou[0]))]
-
-        return processed_results
+        return [
+            {"mask_iou": all_batch_shape_iou[:, i]}
+            for i in range(len(all_batch_shape_iou[0]))
+        ]
 
     def evaluate_interactive_single(self, batched_inputs, extra={}):
         assert self.task_switch['spatial']
@@ -543,8 +552,13 @@ class GeneralizedSEEM(nn.Module):
         if 'gt_masks_orisize' in b:
             gt_smask = b['gt_masks_orisize'].to(pred_smask_ori.device)
             ious = get_iou(gt_smask, pred_smask_ori)
-        processed_results = [{"mask_iou": ious, 'pred_mask_ori': pred_smask_ori, 'pred_mask_batch': pred_smask_batch}]
-        return processed_results
+        return [
+            {
+                "mask_iou": ious,
+                'pred_mask_ori': pred_smask_ori,
+                'pred_mask_batch': pred_smask_batch,
+            }
+        ]
 
     def evaluate_interactive_grounding(self, batched_inputs):
         assert self.task_switch['spatial']
@@ -620,7 +634,7 @@ class GeneralizedSEEM(nn.Module):
             ious = get_iou(gt_smask, pred_smask_all)
             all_batch_shape_iou += [ious]
             if (ious > 0.9).sum() == len(ious):
-                all_batch_shape_iou += [ious for j in range(self.interactive_iter-i-1)]
+                all_batch_shape_iou += [ious for _ in range(self.interactive_iter-i-1)]
                 break
             if self.interactive_mode in ['best', 'best_random']:
                 extra.update(self.prepare_next_spaital_mask(extra, batched_inputs, mode=self.interactive_mode))
@@ -629,36 +643,10 @@ class GeneralizedSEEM(nn.Module):
             else:
                 assert False, "invalid interactive mode"
         all_batch_shape_iou = torch.stack(all_batch_shape_iou)
-        processed_results = [{"mask_iou": all_batch_shape_iou[:,i]} for i in range(len(all_batch_shape_iou[0]))]
-
-        # visualization
-        # VL.step()
-        # import cv2
-        # v_masks = []
-        # v_pos_masks = []
-        # v_neg_masks = []
-        # txt = []
-
-        # img = batched_inputs[0]['image'].permute(1,2,0).cpu().numpy()
-        # mask_img = VL.overlay_single_mask_to_image(img[:,:,::-1], v_gt_mask.cpu().float().numpy())
-        # acc_pos_mask = np.zeros(v_pos_mask[0].shape)
-        # acc_neg_mask = np.zeros(v_neg_mask[0].shape)
-        # for x,y,z,iou in zip(v_pos_mask, v_neg_mask, v_pred_mask, all_batch_shape_iou):
-        #     # dilate x,y
-        #     x = cv2.dilate(x, np.ones((5,5), np.uint8), iterations=3)
-        #     y = cv2.dilate(y, np.ones((5,5), np.uint8), iterations=3)
-        #     acc_pos_mask += x
-        #     acc_neg_mask += y
-
-        #     v_masks += [z]
-        #     v_pos_masks += [acc_pos_mask.clip(0,1)]
-        #     v_neg_masks += [acc_neg_mask.clip(0,1)]
-        #     txt += ["pred_{}".format(str(iou[0].item())[0:5])]
-
-        # VL.add_image(img[:,:,::-1])
-        # VL.insert(mask_img, "gt_mask")
-        # VL.overlay_obj_mask_to_image_withposneg(img[:,:,::-1], v_masks, v_pos_masks, v_neg_masks, txt, max_len=20)
-        return processed_results
+        return [
+            {"mask_iou": all_batch_shape_iou[:, i]}
+            for i in range(len(all_batch_shape_iou[0]))
+        ]
 
     def evaluate_referring_image(self, batched_inputs, extra={}):
         assert self.task_switch['spatial']
@@ -1014,8 +1002,7 @@ class GeneralizedSEEM(nn.Module):
     def semantic_inference(self, mask_cls, mask_pred):
         mask_cls = F.softmax(mask_cls, dim=-1)[..., :-1]
         mask_pred = mask_pred.sigmoid()
-        semseg = torch.einsum("qc,qhw->chw", mask_cls, mask_pred)
-        return semseg
+        return torch.einsum("qc,qhw->chw", mask_cls, mask_pred)
 
     def panoptic_inference(self, mask_cls, mask_pred):
         scores, labels = F.softmax(mask_cls, dim=-1).max(-1)
@@ -1034,15 +1021,12 @@ class GeneralizedSEEM(nn.Module):
         panoptic_seg = torch.zeros((h, w), dtype=torch.int32, device=cur_masks.device)
         segments_info = []
 
-        current_segment_id = 0
-
-        if cur_masks.shape[0] == 0:
-            # We didn't detect any mask :(
-            return panoptic_seg, segments_info
-        else:
+        if cur_masks.shape[0] != 0:
             # take argmax
             cur_mask_ids = cur_prob_masks.argmax(0)
             stuff_memory_list = {}
+            current_segment_id = 0
+
             for k in range(cur_classes.shape[0]):
                 pred_class = cur_classes[k].item()
                 isthing = pred_class in self.metadata.thing_dataset_id_to_contiguous_id.values()
@@ -1054,9 +1038,8 @@ class GeneralizedSEEM(nn.Module):
                     if mask_area / original_area < self.overlap_threshold:
                         continue
 
-                    # merge stuff regions
                     if not isthing:
-                        if int(pred_class) in stuff_memory_list.keys():
+                        if int(pred_class) in stuff_memory_list:
                             panoptic_seg[mask] = stuff_memory_list[int(pred_class)]
                             continue
                         else:
@@ -1068,12 +1051,13 @@ class GeneralizedSEEM(nn.Module):
                     segments_info.append(
                         {
                             "id": current_segment_id,
-                            "isthing": bool(isthing),
+                            "isthing": isthing,
                             "category_id": int(pred_class),
                         }
                     )
 
-            return panoptic_seg, segments_info
+        # We didn't detect any mask :(
+        return panoptic_seg, segments_info
 
     def instance_inference(self, mask_cls, mask_pred, box_pred):
         # mask_pred is already processed to have the same shape as original input
@@ -1129,7 +1113,7 @@ class GeneralizedSEEM(nn.Module):
         new_queries = []
         for targets_per_image in targets:
             # we randomly sample maximally topk concepts
-            unique_target_classes = [k for k in set(targets_per_image.gt_classes.tolist())]
+            unique_target_classes = list(set(targets_per_image.gt_classes.tolist()))
             selected_target_classes = random.sample(unique_target_classes, min(topk, len(unique_target_classes)))
             new_targets_per_image = []
             new_queries_per_image = []

@@ -52,15 +52,14 @@ def main(args=None):
     model = BaseModel(opt, build_model(opt)).from_pretrained(pretrained_pth).eval().cuda()
     model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(["background", "background"], is_eval=False)
 
-    t = []
-    t.append(transforms.Resize(224, interpolation=Image.BICUBIC))
+    t = [transforms.Resize(224, interpolation=Image.BICUBIC)]
     transform_ret = transforms.Compose(t)
     t = []
     t.append(transforms.Resize(512, interpolation=Image.BICUBIC))
     transform_grd = transforms.Compose(t)
 
     metadata = MetadataCatalog.get('ade20k_panoptic_train')
-    color = [0/255, 255/255, 0/255]
+    color = [0/255, 1, 0/255]
 
     with torch.no_grad():
         batch_inputs = []
@@ -83,11 +82,14 @@ def main(args=None):
         v_emb = v_emb / (v_emb.norm(dim=-1, keepdim=True) + 1e-7)
 
         model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(text, is_eval=False, name='caption', prompt=False)
-        t_emb = getattr(model.model.sem_seg_head.predictor.lang_encoder, '{}_text_embeddings'.format('caption'))
+        t_emb = getattr(
+            model.model.sem_seg_head.predictor.lang_encoder,
+            'caption_text_embeddings',
+        )
         temperature = model.model.sem_seg_head.predictor.lang_encoder.logit_scale
         logits = vl_similarity(v_emb, t_emb, temperature)
         max_prob, max_id = logits.softmax(0).max(dim=0)
-        
+
         frame_pth = image_list[max_id.item()]
         image_ori = Image.open(frame_pth)
         width = image_ori.size[0]
@@ -140,13 +142,16 @@ def main(args=None):
         thickness              = 2
 
         bottomLeftCornerOfText = (x1, y1+21)
-        cv2.putText(out_image, str(max_prob.item())[0:4],
+        cv2.putText(
+            out_image,
+            str(max_prob.item())[:4],
             bottomLeftCornerOfText,
             font,
             0.8,
-            [0,0,255],
+            [0, 0, 255],
             thickness,
-            lineType)
+            lineType,
+        )
 
         if not os.path.exists(output_root):
             os.makedirs(output_root)

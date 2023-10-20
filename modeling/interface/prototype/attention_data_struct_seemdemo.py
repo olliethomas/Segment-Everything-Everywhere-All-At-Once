@@ -89,7 +89,7 @@ class AttentionDataStruct(nn.Module):
         # initialize duplication
         for key, values in self.p_duplication.items():
             for name in values:
-                self.duplication_dict["{}_{}".format(key, name)] = self.p_duplication[key][name]
+                self.duplication_dict[f"{key}_{name}"] = self.p_duplication[key][name]
 
         # initialize flag
         self.flags = {"object": True}
@@ -103,7 +103,7 @@ class AttentionDataStruct(nn.Module):
             self.output['predictions_class'] = []
             self.output['predictions_mask'] = []
             self.output['predictions_maskemb'] = []
-        
+
         if self.task_switch['bbox']:
             self.output['predictions_bbox'] = []
 
@@ -115,9 +115,9 @@ class AttentionDataStruct(nn.Module):
             self.spatial_memory['prev_batch_mask'] = extra['prev_mask']
 
         if (self.task_switch['grounding'] and ('grounding' in self.flags and self.flags['grounding']==True)) \
-                or (self.task_switch['audio'] and ('audio' in self.flags and self.flags['audio']==True)):
+                    or (self.task_switch['audio'] and ('audio' in self.flags and self.flags['audio']==True)):
             self.output['predictions_caption'] = []
-        
+
         if self.task_switch['visual']:
             self.output['predictions_pos_visual'] = []
             self.output['predictions_neg_visual'] = []
@@ -125,13 +125,13 @@ class AttentionDataStruct(nn.Module):
         # initialize cross_attn, whether the variable is used in cross attention
         for key, values in self.p_cross_attn.items():
             for name in values:
-                self.cross_attn_dict["{}_{}".format(key, name)] = self.p_cross_attn[key][name]
-        
+                self.cross_attn_dict[f"{key}_{name}"] = self.p_cross_attn[key][name]
+
         # initialize self_attn, whether the variable is used in self attention, and the interactions between queries
         for key, values in self.p_self_attn.items():
             for name in values:
                 self.self_attn_dict["{}_{}".format(key, name)] = self.p_self_attn[key][name]
-        
+
         # initialize masking
         self.masking = self.p_masking
 
@@ -143,7 +143,9 @@ class AttentionDataStruct(nn.Module):
         if var is not None:
             self.attn_variables[name] = var
         elif name in self.duplication_dict:
-            assert self.duplication_dict[name] in self.attn_variables, "Duplication variable {} is not initialized yet.".format(name)
+            assert (
+                self.duplication_dict[name] in self.attn_variables
+            ), f"Duplication variable {name} is not initialized yet."
             self.attn_variables[name] = self.attn_variables[self.duplication_dict[name]].copy()
         else:
             var = Variable(output, name, _type, pos)
@@ -247,14 +249,11 @@ class AttentionDataStruct(nn.Module):
         logits_idx_x = torch.arange(len(logits_idx_y), device=logits_idx_y.device)
         logits_idx = torch.stack([logits_idx_x, logits_idx_y]).tolist()
         pred_masks_pos = pred_smasks[logits_idx][:,None,]
-        
-        extra = {"prev_mask": pred_masks_pos}
-        return extra
+
+        return {"prev_mask": pred_masks_pos}
 
     def organize_output(self, ):
-        outputs = {}
-        outputs['aux_outputs'] = [{} for i in range(self.num_layers)]
-
+        outputs = {'aux_outputs': [{} for _ in range(self.num_layers)]}
         for key, values in self.output.items():
             for _key, idx_name in zip(predict_name_matcher[key], predict_index_matcher[key]):
                 if idx_name not in self.query_index:

@@ -80,13 +80,12 @@ class MaskFormerInstanceDatasetMapper:
             augs.append(ColorAugSSDTransform(img_format=cfg_input['FORMAT']))
         augs.append(T.RandomFlip())
 
-        ret = {
+        return {
             "is_train": is_train,
             "augmentations": augs,
             "image_format": cfg_input['FORMAT'],
             "size_divisibility": cfg_input['SIZE_DIVISIBILITY'],
         }
-        return ret
 
     def __call__(self, dataset_dict):
         """
@@ -129,17 +128,12 @@ class MaskFormerInstanceDatasetMapper:
                 # COCO RLE
                 masks.append(mask_util.decode(segm))
             elif isinstance(segm, np.ndarray):
-                assert segm.ndim == 2, "Expect segmentation of 2 dimensions, got {}.".format(
-                    segm.ndim
-                )
+                assert segm.ndim == 2, f"Expect segmentation of 2 dimensions, got {segm.ndim}."
                 # mask array
                 masks.append(segm)
             else:
                 raise ValueError(
-                    "Cannot convert segmentation of type '{}' to BitMasks!"
-                    "Supported types are: polygons as list[list[float] or ndarray],"
-                    " COCO-style RLE as a dict, or a binary segmentation mask "
-                    " in a 2D numpy array of shape HxW.".format(type(segm))
+                    f"Cannot convert segmentation of type '{type(segm)}' to BitMasks!Supported types are: polygons as list[list[float] or ndarray], COCO-style RLE as a dict, or a binary segmentation mask  in a 2D numpy array of shape HxW."
                 )
 
         # Pad image and segmentation label here!
@@ -172,7 +166,7 @@ class MaskFormerInstanceDatasetMapper:
         # Prepare per-category binary masks
         instances = Instances(image_shape)
         instances.gt_classes = classes
-        if len(masks) == 0:
+        if not masks:
             # Some image does not have annotation (all ignored)
             instances.gt_masks = torch.zeros((0, image.shape[-2], image.shape[-1]))
         else:

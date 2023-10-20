@@ -60,13 +60,7 @@ def build_transform_gen_se(cfg, is_train):
     min_scale = cfg['INPUT']['MIN_SIZE_TEST']
     max_scale = cfg['INPUT']['MAX_SIZE_TEST']
 
-    augmentation = []
-    augmentation.extend([
-        T.ResizeShortestEdge(
-            min_scale, max_size=max_scale
-        ),
-    ])    
-    return augmentation
+    return [T.ResizeShortestEdge(min_scale, max_size=max_scale)]
 
 # This is specifically designed for the COCO dataset.
 class RefCOCODatasetMapper:
@@ -123,7 +117,7 @@ class RefCOCODatasetMapper:
         else:
             tfm_gens = build_transform_gen_se(cfg, is_train)
 
-        ret = {
+        return {
             "is_train": is_train,
             "tfm_gens": tfm_gens,
             "image_format": cfg['INPUT'].get('FORMAT', 'RGB'),
@@ -132,7 +126,6 @@ class RefCOCODatasetMapper:
             "mean": cfg['INPUT']['PIXEL_MEAN'],
             "std": cfg['INPUT']['PIXEL_STD'],
         }
-        return ret
 
     def __call__(self, dataset_dict):
         """
@@ -144,6 +137,9 @@ class RefCOCODatasetMapper:
         """
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
         file_name = dataset_dict['file_name']
+        masks_grd = []
+        texts_grd = []
+        boxes_grd = []
         if self.is_train == False:
             image = utils.read_image(file_name, format=self.img_format)
             utils.check_image_size(dataset_dict, image)
@@ -152,9 +148,6 @@ class RefCOCODatasetMapper:
 
             grounding_anno = dataset_dict['grounding_info']
             assert len(grounding_anno) > 0
-            masks_grd = []
-            texts_grd = []
-            boxes_grd = []
             for ann in grounding_anno:
                 rle = mask.frPyObjects(
                     ann['segmentation'], dataset_dict['height'], dataset_dict['width'])
@@ -169,7 +162,6 @@ class RefCOCODatasetMapper:
             boxes_grd = torch.tensor(boxes_grd)
 
             groundings = {'masks': masks_grd, 'texts': texts_grd, 'boxes': boxes_grd}
-            dataset_dict["groundings"] = groundings
         else:
             image = utils.read_image(dataset_dict["file_name"], format=self.img_format)
             utils.check_image_size(dataset_dict, image)
@@ -179,9 +171,6 @@ class RefCOCODatasetMapper:
 
             grounding_anno = dataset_dict['grounding_info']
             assert len(grounding_anno) > 0
-            masks_grd = []
-            texts_grd = []
-            boxes_grd = []
             hash_grd = []
             for ann in grounding_anno:
                 rle = mask.frPyObjects(
@@ -198,5 +187,5 @@ class RefCOCODatasetMapper:
             masks_grd = torch.from_numpy(np.stack(masks_grd))
             boxes_grd = torch.tensor(boxes_grd)
             groundings = {'masks': masks_grd, 'texts': texts_grd, 'hash': hash_grd, 'mode': 'text'}
-            dataset_dict["groundings"] = groundings
+        dataset_dict["groundings"] = groundings
         return dataset_dict

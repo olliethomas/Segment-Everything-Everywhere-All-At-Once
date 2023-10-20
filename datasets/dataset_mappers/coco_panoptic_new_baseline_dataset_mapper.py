@@ -93,9 +93,7 @@ class COCOPanopticNewBaselineDatasetMapper:
         """
         self.tfm_gens = tfm_gens
         logging.getLogger(__name__).info(
-            "[COCOPanopticNewBaselineDatasetMapper] Full TransformGens used in training: {}".format(
-                str(self.tfm_gens)
-            )
+            f"[COCOPanopticNewBaselineDatasetMapper] Full TransformGens used in training: {str(self.tfm_gens)}"
         )
 
         self.img_format = image_format
@@ -110,7 +108,7 @@ class COCOPanopticNewBaselineDatasetMapper:
         # Build augmentation
         tfm_gens = build_transform_gen(cfg, is_train)
 
-        ret = {
+        return {
             "is_train": is_train,
             "tfm_gens": tfm_gens,
             "image_format": cfg['INPUT']['FORMAT'],
@@ -118,7 +116,6 @@ class COCOPanopticNewBaselineDatasetMapper:
             "grounding": cfg['MODEL']['DECODER']['GROUNDING']['ENABLED'],
             "max_grounding_num": cfg['MODEL']['DECODER']['GROUNDING']['MAX_LEN'],
         }
-        return ret
 
     def __call__(self, dataset_dict):
         """
@@ -148,7 +145,7 @@ class COCOPanopticNewBaselineDatasetMapper:
             cap_similarity = np.array([self.caption_similarity[noun][0] for noun in nouns])
             captions_noun.append(nouns[cap_similarity < self.caption_thres].tolist())
         dataset_dict["captions_noun"] = captions_noun
-        
+
         if not self.is_train:
             # USER: Modify this if you want to keep them for some reason.
             dataset_dict.pop("annotations", None)
@@ -169,8 +166,8 @@ class COCOPanopticNewBaselineDatasetMapper:
             classes = []
             masks = []
             for segment_info in segments_info:
-                class_id = segment_info["category_id"]
                 if not segment_info["iscrowd"]:
+                    class_id = segment_info["category_id"]
                     classes.append(class_id)
                     masks.append(pan_seg_gt == segment_info["id"])
 
@@ -180,7 +177,7 @@ class COCOPanopticNewBaselineDatasetMapper:
             instances.gt_classes = torch.tensor(classes, dtype=torch.int64)
             instances.is_things = torch.tensor(is_things, dtype=torch.int64)
 
-            if len(masks) == 0:
+            if not masks:
                 # Some image does not have annotation (all ignored)
                 instances.gt_masks = torch.zeros((0, pan_seg_gt.shape[-2], pan_seg_gt.shape[-1]))
                 instances.gt_boxes = Boxes(torch.zeros((0, 4)))
@@ -238,7 +235,7 @@ class COCOPanopticNewBaselineDatasetMapper:
                     hash_grd = hash_grd[selected_mask]
                     masks_grd = masks_grd[selected_mask]
                     texts_grd = [prompt_engineering(text.replace('-other','').replace('-merged','').replace('-stuff',''), topk=10000, suffix='.') \
-                                        for text in texts_grd]
+                                            for text in texts_grd]
             groundings = {'masks': masks_grd, 'texts': texts_grd, 'mode': mode, 'hash': hash_grd}
             dataset_dict["groundings"] = groundings        
 

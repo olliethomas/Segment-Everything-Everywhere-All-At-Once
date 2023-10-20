@@ -78,7 +78,7 @@ class AttentionDataStruct(nn.Module):
         # initialize duplication
         for key, values in self.p_duplication.items():
             for name in values:
-                self.duplication_dict["{}_{}".format(key, name)] = self.p_duplication[key][name]
+                self.duplication_dict[f"{key}_{name}"] = self.p_duplication[key][name]
 
         # initialize flag
         self.flags = {"object": True}
@@ -91,7 +91,7 @@ class AttentionDataStruct(nn.Module):
         if self.task_switch['mask']:
             self.output['predictions_class'] = []
             self.output['predictions_mask'] = []
-        
+
         if self.task_switch['bbox']:
             self.output['predictions_bbox'] = []
 
@@ -106,17 +106,17 @@ class AttentionDataStruct(nn.Module):
 
         if self.task_switch['grounding'] and ('grounding' in self.flags and self.flags['grounding']==True):
             self.output['predictions_caption'] = []
-        
+
         # initialize cross_attn, whether the variable is used in cross attention
         for key, values in self.p_cross_attn.items():
             for name in values:
-                self.cross_attn_dict["{}_{}".format(key, name)] = self.p_cross_attn[key][name]
-        
+                self.cross_attn_dict[f"{key}_{name}"] = self.p_cross_attn[key][name]
+
         # initialize self_attn, whether the variable is used in self attention, and the interactions between queries
         for key, values in self.p_self_attn.items():
             for name in values:
                 self.self_attn_dict["{}_{}".format(key, name)] = self.p_self_attn[key][name]
-        
+
         # initialize masking
         self.masking = self.p_masking
 
@@ -128,7 +128,9 @@ class AttentionDataStruct(nn.Module):
         if var is not None:
             self.attn_variables[name] = var
         elif name in self.duplication_dict:
-            assert self.duplication_dict[name] in self.attn_variables, "Duplication variable {} is not initialized yet.".format(name)
+            assert (
+                self.duplication_dict[name] in self.attn_variables
+            ), f"Duplication variable {name} is not initialized yet."
             self.attn_variables[name] = self.attn_variables[self.duplication_dict[name]].copy()
         else:
             var = Variable(output, name, _type, pos)
@@ -232,25 +234,11 @@ class AttentionDataStruct(nn.Module):
         logits_idx_x = torch.arange(len(logits_idx_y), device=logits_idx_y.device)
         logits_idx = torch.stack([logits_idx_x, logits_idx_y]).tolist()
         pred_masks_pos = pred_smasks[logits_idx][:,None,]
-        
-        # s_emb = results['pred_nspatials']
-        # pred_logits = v_emb @ s_emb.transpose(1,2)
-        # logits_idx_y = pred_logits[:,:,0].max(dim=1)[1]
-        # logits_idx_x = torch.arange(len(logits_idx_y), device=logits_idx_y.device)
-        # logits_idx = torch.stack([logits_idx_x, logits_idx_y]).tolist()
-        # pred_masks_neg = pred_smasks[logits_idx][:,None,]
-        # # clip the negative mask to 0, and then multiply by -1
-        # pred_masks_neg = (pred_masks_neg.clip(0) * -1)
-        # keep_neg = (s_emb.sum(dim=list(range(1, s_emb.dim()))) != 0).float()
-        # pred_masks_neg = pred_masks_neg * keep_neg[:,None,None,None]
-        # extra = {"prev_mask": pred_masks_pos + pred_masks_neg}
 
-        extra = {"prev_mask": pred_masks_pos}
-        return extra
+        return {"prev_mask": pred_masks_pos}
 
     def organize_output(self, ):
-        outputs = {}
-        outputs['aux_outputs'] = [{} for i in range(self.num_layers)]
+        outputs = {'aux_outputs': [{} for _ in range(self.num_layers)]}
         for key, values in self.output.items():
             for _key, idx_name in zip(predict_name_matcher[key], predict_index_matcher[key]):
                 if idx_name not in self.query_index:
@@ -258,7 +246,7 @@ class AttentionDataStruct(nn.Module):
                 outputs[_key] = self.output[key][-1][:,self.query_index[idx_name][0]:self.query_index[idx_name][1]]
                 for idx, aux_values in enumerate(self.output[key][:-1]):
                     outputs['aux_outputs'][idx][_key] = aux_values[:,self.query_index[idx_name][0]:self.query_index[idx_name][1]]
-        if self.task == 'spatial' or self.task == 'refimg':
+        if self.task in ['spatial', 'refimg']:
             outputs = self.update_spatial_results(outputs)
         # outputs = self.update_spatial_results(outputs)
         return outputs

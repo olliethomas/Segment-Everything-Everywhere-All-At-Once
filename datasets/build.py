@@ -53,7 +53,7 @@ class JointLoader(torchdata.IterableDataset):
     def __init__(self, loaders, key_dataset):
         dataset_names = []
         for key, loader in loaders.items():
-            name = "{}".format(key.split('_')[0])
+            name = f"{key.split('_')[0]}"
             setattr(self, name, loader)
             dataset_names += [name]
         self.dataset_names = dataset_names
@@ -120,10 +120,10 @@ def get_detection_dataset_dicts(
     if isinstance(dataset_names, str):
         dataset_names = [dataset_names]
     assert len(dataset_names)
-    
+
     dataset_dicts = [DatasetCatalog.get(dataset_name) for dataset_name in dataset_names]
     for dataset_name, dicts in zip(dataset_names, dataset_dicts):
-        assert len(dicts), "Dataset '{}' is empty!".format(dataset_name)
+        assert len(dicts), f"Dataset '{dataset_name}' is empty!"
 
     if proposal_files is not None:
         assert len(dataset_names) == len(proposal_files)
@@ -139,7 +139,7 @@ def get_detection_dataset_dicts(
     if filter_empty and has_instances:
         dataset_dicts = filter_images_with_only_crowd_annotations(dataset_dicts, dataset_names)
 
-    assert len(dataset_dicts), "No valid data found in {}.".format(",".join(dataset_names))
+    assert len(dataset_dicts), f'No valid data found in {",".join(dataset_names)}.'
     return dataset_dicts
 
 
@@ -224,9 +224,8 @@ def build_detection_test_loader(
         dataset = MapDataset(dataset, mapper)
     if isinstance(dataset, torchdata.IterableDataset):
         assert sampler is None, "sampler must be None if dataset is IterableDataset"
-    else:
-        if sampler is None:
-            sampler = InferenceSampler(len(dataset))
+    elif sampler is None:
+        sampler = InferenceSampler(len(dataset))
     return torchdata.DataLoader(
         dataset,
         batch_size=batch_size,
@@ -238,10 +237,10 @@ def build_detection_test_loader(
 
 
 def _train_loader_from_config(cfg, dataset_name, mapper, *, dataset=None, sampler=None):
-    cfg_datasets = cfg['DATASETS']
     cfg_dataloader = cfg['DATALOADER']
-    
+
     if dataset is None:
+        cfg_datasets = cfg['DATASETS']
         dataset = get_detection_dataset_dicts(
             dataset_name,
             filter_empty=cfg_dataloader['FILTER_EMPTY_ANNOTATIONS'],
@@ -254,7 +253,7 @@ def _train_loader_from_config(cfg, dataset_name, mapper, *, dataset=None, sample
     if sampler is None:
         sampler_name = cfg_dataloader['SAMPLER_TRAIN']
         logger = logging.getLogger(__name__)
-        logger.info("Using training sampler {}".format(sampler_name))
+        logger.info(f"Using training sampler {sampler_name}")
         sampler = TrainingSampler(len(dataset))
 
     return {
@@ -493,9 +492,8 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
     # instance segmentation
     if evaluator_type == "coco":
         evaluator_list.append(COCOEvaluator(dataset_name, output_dir=output_folder))
-    
+
     cfg_model_decoder_test = cfg["MODEL"]["DECODER"]["TEST"]
-    # panoptic segmentation
     if evaluator_type in [
         "coco_panoptic_seg",
         "ade20k_panoptic_seg",
@@ -561,14 +559,12 @@ def build_evaluator(cfg, dataset_name, output_folder=None):
     if evaluator_type in ["interactive", "interactive_grounding"]:
         evaluator_list.append(InteractiveEvaluator(dataset_name, output_dir=output_folder, max_clicks=cfg['STROKE_SAMPLER']['EVAL']['MAX_ITER'], iou_iter=cfg['STROKE_SAMPLER']['EVAL']['IOU_ITER']))
 
-    if len(evaluator_list) == 0:
+    if not evaluator_list:
         raise NotImplementedError(
-            "no Evaluator for the dataset {} with the type {}".format(
-                dataset_name, evaluator_type
-            )
+            f"no Evaluator for the dataset {dataset_name} with the type {evaluator_type}"
         )
     elif len(evaluator_list) == 1:
         return evaluator_list[0]
-        
-    
+
+
     return DatasetEvaluators(evaluator_list)

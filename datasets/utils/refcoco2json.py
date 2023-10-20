@@ -28,13 +28,10 @@ final_anno = {}
 for anno in full_anno:
     imageid_list += [anno['image_id']]
     final_anno[anno['ann_id']] = anno
-    
+
 annotations = [value for key, value in final_anno.items()]
 
-iamges = []
-for image_id in list(set(imageid_list)):
-    iamges += [image_annot[image_id]]
-
+iamges = [image_annot[image_id] for image_id in list(set(imageid_list))]
 outputs = {'images': iamges, 'annotations': annotations}
 print(len(iamges))
 print(len(annotations))

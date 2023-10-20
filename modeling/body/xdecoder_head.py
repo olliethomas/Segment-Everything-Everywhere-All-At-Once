@@ -68,11 +68,12 @@ class XdecoderHead(nn.Module):
         dec_cfg = cfg['MODEL']['DECODER']
 
         # figure out in_channels to transformer predictor
-        if in_features_type == "transformer_encoder":
-            transformer_predictor_in_channels = enc_cfg['CONVS_DIM']
-        elif in_features_type == "pixel_embedding":
+        if in_features_type == "pixel_embedding":
             transformer_predictor_in_channels = enc_cfg['MASK_DIM']
-        elif in_features_type == "multi_scale_pixel_decoder":
+        elif in_features_type in [
+            "transformer_encoder",
+            "multi_scale_pixel_decoder",
+        ]:
             transformer_predictor_in_channels = enc_cfg['CONVS_DIM']
         else:
             transformer_predictor_in_channels = input_shape[dec_cfg['TRANSFORMER_IN_FEATURE']].channels
@@ -100,20 +101,28 @@ class XdecoderHead(nn.Module):
 
     def layers(self, features, mask=None, target_queries=None, target_vlp=None, task='seg', extra={}):
         mask_features, transformer_encoder_features, multi_scale_features = self.pixel_decoder.forward_features(features)
-        
+
         if self.transformer_in_feature == "multi_scale_pixel_decoder":
-            predictions = self.predictor(multi_scale_features, mask_features, mask, target_queries, target_vlp, task, extra)
+            return self.predictor(
+                multi_scale_features,
+                mask_features,
+                mask,
+                target_queries,
+                target_vlp,
+                task,
+                extra,
+            )
+        elif self.transformer_in_feature == "transformer_encoder":
+            assert (
+                transformer_encoder_features is not None
+            ), "Please use the TransformerEncoderPixelDecoder."
+            return self.predictor(transformer_encoder_features, mask_features, mask)
+        elif self.transformer_in_feature == "pixel_embedding":
+            return self.predictor(mask_features, mask_features, mask)
         else:
-            if self.transformer_in_feature == "transformer_encoder":
-                assert (
-                    transformer_encoder_features is not None
-                ), "Please use the TransformerEncoderPixelDecoder."
-                predictions = self.predictor(transformer_encoder_features, mask_features, mask)
-            elif self.transformer_in_feature == "pixel_embedding":
-                predictions = self.predictor(mask_features, mask_features, mask)
-            else:
-                predictions = self.predictor(features[self.transformer_in_feature], mask_features, mask)
-        return predictions
+            return self.predictor(
+                features[self.transformer_in_feature], mask_features, mask
+            )
 
 
 @register_body

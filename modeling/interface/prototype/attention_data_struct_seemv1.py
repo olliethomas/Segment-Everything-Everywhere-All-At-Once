@@ -85,7 +85,7 @@ class AttentionDataStruct(nn.Module):
         # initialize duplication
         for key, values in self.p_duplication.items():
             for name in values:
-                self.duplication_dict["{}_{}".format(key, name)] = self.p_duplication[key][name]
+                self.duplication_dict[f"{key}_{name}"] = self.p_duplication[key][name]
 
         # initialize flag
         self.flags = {"object": True}
@@ -98,7 +98,7 @@ class AttentionDataStruct(nn.Module):
         if self.task_switch['mask']:
             self.output['predictions_class'] = []
             self.output['predictions_mask'] = []
-        
+
         if self.task_switch['bbox']:
             self.output['predictions_bbox'] = []
 
@@ -107,7 +107,7 @@ class AttentionDataStruct(nn.Module):
 
         if self.task_switch['grounding'] and ('grounding' in self.flags and self.flags['grounding']==True):
             self.output['predictions_caption'] = []
-        
+
         if self.task_switch['spatial'] and ('spatial' in self.flags and self.flags['spatial']==True):
             self.output['predictions_maskemb'] = []
             self.output['predictions_pos_spatial'] = []
@@ -115,17 +115,17 @@ class AttentionDataStruct(nn.Module):
             self.output['predictions_mask'] = [] if 'predictions_mask' not in self.output else self.output['predictions_mask']
             self.output['predictions_class'] = [] if 'predictions_class' not in self.output else self.output['predictions_class']
             self.output['predictions_caption'] = [] if 'predictions_caption' not in self.output else self.output['predictions_caption']
-        
+
         # initialize cross_attn, whether the variable is used in cross attention
         for key, values in self.p_cross_attn.items():
             for name in values:
-                self.cross_attn_dict["{}_{}".format(key, name)] = self.p_cross_attn[key][name]
-        
+                self.cross_attn_dict[f"{key}_{name}"] = self.p_cross_attn[key][name]
+
         # initialize self_attn, whether the variable is used in self attention, and the interactions between queries
         for key, values in self.p_self_attn.items():
             for name in values:
-                self.self_attn_dict["{}_{}".format(key, name)] = self.p_self_attn[key][name]
-        
+                self.self_attn_dict[f"{key}_{name}"] = self.p_self_attn[key][name]
+
         # initialize masking
         self.masking = self.p_masking
 
@@ -135,16 +135,18 @@ class AttentionDataStruct(nn.Module):
 
     def set(self, name, _type, output=None, pos=None, var=None, sample_size=None):
         if var is not None:
-            self.attn_variables[name] = var
+            pass
         elif name in self.duplication_dict:
-            assert self.duplication_dict[name] in self.attn_variables, "Duplication variable {} is not initialized yet.".format(name)
+            assert (
+                self.duplication_dict[name] in self.attn_variables
+            ), f"Duplication variable {name} is not initialized yet."
             var = self.attn_variables[self.duplication_dict[name]].copy()
             if sample_size is not None:
                 var = var.rand_sample(sample_size)
-            self.attn_variables[name] = var
         else:
             var = Variable(output, name, _type, pos)
-            self.attn_variables[name] = var
+
+        self.attn_variables[name] = var
     
     def set_results(self, results):
         for name in self.cross_attn_name:
@@ -184,7 +186,7 @@ class AttentionDataStruct(nn.Module):
             memory_attn_mask = (memory_attn_mask.sigmoid().flatten(2).unsqueeze(1).repeat(1, num_heads, 1, 1).flatten(0, 1) < 0.5).bool().detach()
             repeat = (self.query_index['memories_spatial'][1] - self.query_index['memories_spatial'][0]) // c
             mem_len = self.query_index['memories_spatial'][1] - self.query_index['memories_spatial'][0]
-            probs = torch.tensor([1./repeat for i in range(c)])
+            probs = torch.tensor([1./repeat for _ in range(c)])
             indices = torch.multinomial(probs, num_samples=mem_len, replacement=True).sort()[0]
             attn_mask[:,self.query_index['memories_spatial'][0]:self.query_index['memories_spatial'][1]] = memory_attn_mask[:,indices]
             self.extra['memory_indices'] = indices
@@ -287,8 +289,7 @@ class AttentionDataStruct(nn.Module):
         return extra
 
     def organize_output(self, ):
-        outputs = {}
-        outputs['aux_outputs'] = [{} for i in range(self.num_layers)]
+        outputs = {'aux_outputs': [{} for _ in range(self.num_layers)]}
         for key, values in self.output.items():
             for _key, idx_name in zip(predict_name_matcher[key], predict_index_matcher[key]):
                 if idx_name not in self.query_index:
@@ -296,7 +297,7 @@ class AttentionDataStruct(nn.Module):
                 outputs[_key] = self.output[key][-1][:,self.query_index[idx_name][0]:self.query_index[idx_name][1]]
                 for idx, aux_values in enumerate(self.output[key][:-1]):
                     outputs['aux_outputs'][idx][_key] = aux_values[:,self.query_index[idx_name][0]:self.query_index[idx_name][1]]
-        if self.task == 'spatial' or self.task == 'refimg':
+        if self.task in ['spatial', 'refimg']:
             outputs = self.update_spatial_results(outputs)
         # outputs = self.update_spatial_results(outputs)
         return outputs

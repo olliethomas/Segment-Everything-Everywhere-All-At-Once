@@ -88,14 +88,13 @@ class MaskFormerSemanticDatasetMapper:
         meta = MetadataCatalog.get(dataset_names[0])
         ignore_label = meta.ignore_label
 
-        ret = {
+        return {
             "is_train": is_train,
             "augmentations": augs,
             "image_format": cfg_input['FORMAT'],
             "ignore_label": ignore_label,
             "size_divisibility": cfg_input['SIZE_DIVISIBILITY'],
         }
-        return ret
 
     def __call__(self, dataset_dict):
         """
@@ -119,9 +118,7 @@ class MaskFormerSemanticDatasetMapper:
 
         if sem_seg_gt is None:
             raise ValueError(
-                "Cannot find 'sem_seg_file_name' for semantic segmentation dataset {}.".format(
-                    dataset_dict["file_name"]
-                )
+                f"""Cannot find 'sem_seg_file_name' for semantic segmentation dataset {dataset_dict["file_name"]}."""
             )
 
         aug_input = T.AugInput(image, sem_seg=sem_seg_gt)
@@ -168,19 +165,15 @@ class MaskFormerSemanticDatasetMapper:
             classes = classes[classes != self.ignore_label]
             instances.gt_classes = torch.tensor(classes, dtype=torch.int64)
 
-            masks = []
-            for class_id in classes:
-                masks.append(sem_seg_gt == class_id)
-
-            if len(masks) == 0:
-                # Some image does not have annotation (all ignored)
-                instances.gt_masks = torch.zeros((0, sem_seg_gt.shape[-2], sem_seg_gt.shape[-1]))
-            else:
+            if masks := [sem_seg_gt == class_id for class_id in classes]:
                 masks = BitMasks(
                     torch.stack([torch.from_numpy(np.ascontiguousarray(x.copy())) for x in masks])
                 )
                 instances.gt_masks = masks.tensor
 
+            else:
+                # Some image does not have annotation (all ignored)
+                instances.gt_masks = torch.zeros((0, sem_seg_gt.shape[-2], sem_seg_gt.shape[-1]))
             dataset_dict["instances"] = instances
 
         return dataset_dict

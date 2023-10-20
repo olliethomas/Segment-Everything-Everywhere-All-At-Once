@@ -89,7 +89,7 @@ class SimpleClickSampler(nn.Module):
 
         rand_shapes = prev_masks | next_mask
 
-        types = ['point' for i in range(len(gt_masks))]
+        types = ['point' for _ in range(len(gt_masks))]
         return {'gt_masks': instances.gt_masks.tensor, 'rand_shape': rand_shapes[:,None], 'types': types}
 
     def forward_circle(self, instances, pred_masks=None, prev_masks=None):
@@ -121,7 +121,7 @@ class SimpleClickSampler(nn.Module):
         next_mask = torch.cat(_next_mask, dim=0).bool().cuda()
         rand_shapes = prev_masks | next_mask
 
-        types = ['circle' for i in range(len(gt_masks))]
+        types = ['circle' for _ in range(len(gt_masks))]
         return {'gt_masks': instances.gt_masks.tensor, 'rand_shape': rand_shapes[:,None], 'types': types}
 
     def forward_scribble(self, instances, pred_masks=None, prev_masks=None):
@@ -153,7 +153,7 @@ class SimpleClickSampler(nn.Module):
         next_mask = torch.cat(_next_mask, dim=0).bool().cuda()
         rand_shapes = prev_masks | next_mask
 
-        types = ['scribble' for i in range(len(gt_masks))]
+        types = ['scribble' for _ in range(len(gt_masks))]
         return {'gt_masks': instances.gt_masks.tensor, 'rand_shape': rand_shapes[:,None], 'types': types}
 
     def forward_polygon(self, instances, pred_masks=None, prev_masks=None):
@@ -171,9 +171,9 @@ class SimpleClickSampler(nn.Module):
         fp = gt_masks & (~(gt_masks & pred_masks)) & (~prev_masks)
 
         next_mask = []
+        rad = 0.2
+        edgy = 0.05
         for i in range(len(fp)):
-            rad = 0.2
-            edgy = 0.05
             num_points = random.randint(1, min(self.max_points, fp[i].sum()))
 
             h,w = fp[i].shape
@@ -199,7 +199,7 @@ class SimpleClickSampler(nn.Module):
         next_mask = torch.stack(next_mask).to(pred_masks.device).bool()
         rand_shapes = prev_masks | next_mask
 
-        types = ['polygon' for i in range(len(gt_masks))]
+        types = ['polygon' for _ in range(len(gt_masks))]
         return {'gt_masks': instances.gt_masks.tensor, 'rand_shape': rand_shapes[:,None], 'types': types}
 
     def forward_box(self, instances, pred_masks=None, prev_masks=None):
@@ -233,7 +233,7 @@ class SimpleClickSampler(nn.Module):
 
         rand_shapes = prev_masks | next_mask
 
-        types = ['box' for i in range(len(gt_masks))]
+        types = ['box' for _ in range(len(gt_masks))]
         return {'gt_masks': instances.gt_masks.tensor, 'rand_shape': rand_shapes[:,None], 'types': types}
 
     def forward(self, instances, *args, **kwargs):

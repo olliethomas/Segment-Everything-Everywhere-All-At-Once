@@ -39,8 +39,7 @@ _PREDEFINED_SPLITS_COCO_PANOPTIC_CAPTION = {
 
 
 def get_metadata():
-    meta = {}
-    return meta
+    return {}
 
 
 def load_refcoco_json(image_root, annot_json, metadata):

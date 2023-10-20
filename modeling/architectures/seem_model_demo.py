@@ -234,15 +234,19 @@ class GeneralizedSEEM(nn.Module):
             with torch.no_grad():
                 # generate random integeter between [0,3]
                 rand_iter_num = random.randint(0, 2)
-                for i in range(rand_iter_num):
+                for _ in range(rand_iter_num):
                     outputs = self.sem_seg_head.predictor(multi_scale_features, mask_features, extra=extra, task='spatial')
                     extra.update(outputs)
                     extra.update(self.prepare_next_spaital_mask(extra, batched_inputs))
 
         outputs = self.sem_seg_head.predictor(multi_scale_features, mask_features, extra=extra, task='seg')
-        extra = {'lang_logit': self.sem_seg_head.predictor.lang_encoder.logit_scale,
-                 'class_embeddings': getattr(self.sem_seg_head.predictor.lang_encoder, '{}_text_embeddings'.format('default')),
-                 'false_positive_mask': extra['false_positive_mask']}
+        extra = {
+            'lang_logit': self.sem_seg_head.predictor.lang_encoder.logit_scale,
+            'class_embeddings': getattr(
+                self.sem_seg_head.predictor.lang_encoder, 'default_text_embeddings'
+            ),
+            'false_positive_mask': extra['false_positive_mask'],
+        }
         # bipartite matching-based loss
         self.criterion.losses = self.losses['seg'] # seg criterion losses
         losses = self.criterion(outputs, targets, extra)
@@ -272,7 +276,7 @@ class GeneralizedSEEM(nn.Module):
 
         if 'visual' in batched_inputs[0]:
             extra.update(batched_inputs[0]['visual'])
-        
+
         if 'text' in batched_inputs[0]:
             gtext = self.sem_seg_head.predictor.lang_encoder.get_text_token_embeddings(batched_inputs[0]['text'], name='grounding', token=False, norm=False)
             token_emb = gtext['token_emb']
@@ -292,64 +296,14 @@ class GeneralizedSEEM(nn.Module):
             extra['audio_tokens'] = query_emb[:,None]
             extra['audio_nonzero_mask'] = non_zero_query_mask.t()
             extra['audio_class'] = gtext['class_emb']
-        
+
         outputs = self.sem_seg_head.predictor(multi_scale_features, mask_features, target_queries=queries_grounding, extra=extra, task='demo')
         return outputs, images.tensor.shape, extra
-
-        assert self.task_switch['spatial']
-        assert 'spatial_query' in batched_inputs[0]
-        assert len(batched_inputs) == 1, "only support batch size equal to 1"
-
-        images = [x["image"].to(self.device) for x in batched_inputs]
-        images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-        images = ImageList.from_tensors(images, self.size_divisibility)
-        img_bs = images.tensor.shape[0]
-
-        targets = targets_grounding = queries_grounding = None
-        extra = {}
-
-        features = self.backbone(images.tensor)
-        mask_features, transformer_encoder_features, multi_scale_features = self.sem_seg_head.pixel_decoder.forward_features(features)
-
-        image_sizes = [x["image"].shape[-2:] for x in batched_inputs]
-        nm = len(batched_inputs[0]['spatial_query']['rand_shape'])
-        multi_scale_features = [m.repeat(nm,1,1,1) for m in multi_scale_features]
-        mask_features = mask_features.repeat(nm,1,1,1)
-
-        all_batch_shape_iou = []
-        pred_smask_pointer = None
-        prev_smask_pointer = None
-        pred_smask_all = None
-
-        query_index = self.sem_seg_head.predictor.query_index
-        assert self.interactive_mode == 'best'
-        pos_masks = (batched_inputs[0]['spatial_query']['rand_shape'].to(self.device)).unbind(0)
-        pos_masks = ImageList.from_tensors(pos_masks, self.size_divisibility).tensor.unbind(0)
-
-        neg_masks = (batched_inputs[0]['spatial_query']['rand_shape'].to(self.device) & False).unbind(0)
-        neg_masks = ImageList.from_tensors(neg_masks, self.size_divisibility).tensor.unbind(0)
-        extra.update({'spatial_query_pos_mask': pos_masks, 'spatial_query_neg_mask': neg_masks})
-
-        for i in range(self.interactive_iter):
-            outputs = self.sem_seg_head.predictor(multi_scale_features, mask_features, target_queries=queries_grounding, extra=extra, task='spatial')
-            extra.update(outputs)
-            pred_smask = F.interpolate(outputs['prev_mask'], images.tensor.shape[-2:], mode='bicubic')
-
-            s = image_sizes[0]
-            b = batched_inputs[0]
-            pred_smask_all = F.interpolate(pred_smask[:,:,:s[0],:s[1]], (b['height'], b['width']), mode='bicubic')[:,0].sigmoid() > 0.5
-            gt_smask = b['gt_masks_orisize']
-            all_batch_shape_iou += [get_iou(gt_smask, pred_smask_all)]
-            extra.update(self.prepare_next_spaital_mask(extra, batched_inputs))
-
-        all_batch_shape_iou = torch.stack(all_batch_shape_iou)
-        processed_results = [{"mask_iou": all_batch_shape_iou[:,i]} for i in range(len(all_batch_shape_iou[0]))]
-        return processed_results
 
     def evaluate(self, batched_inputs):
         images = [x["image"].to(self.device) for x in batched_inputs]
         images = [(x - self.pixel_mean) / self.pixel_std for x in images]
-        
+
         images = ImageList.from_tensors(images, self.size_divisibility)
         img_bs = images.tensor.shape[0]
 
@@ -359,7 +313,11 @@ class GeneralizedSEEM(nn.Module):
 
         mask_cls_results = outputs["pred_logits"]
         mask_pred_results = outputs["pred_masks"]
-        box_pred_results = outputs["pred_boxes"] if self.task_switch['bbox'] else [None for i in range(len(mask_pred_results))]
+        box_pred_results = (
+            outputs["pred_boxes"]
+            if self.task_switch['bbox']
+            else [None for _ in range(len(mask_pred_results))]
+        )
 
         # upsample masks
         mask_pred_results = F.interpolate(
@@ -397,7 +355,7 @@ class GeneralizedSEEM(nn.Module):
             if self.panoptic_on:
                 panoptic_r = retry_if_cuda_oom(self.panoptic_inference)(mask_cls_result, mask_pred_result)
                 processed_results[-1]["panoptic_seg"] = panoptic_r
-            
+
             # instance segmentation inference
             if self.instance_on:
                 if self.task_switch['bbox']:
@@ -442,7 +400,7 @@ class GeneralizedSEEM(nn.Module):
         neg_masks = ImageList.from_tensors(neg_masks, self.size_divisibility).tensor.unbind(0)
         extra.update({'spatial_query_pos_mask': pos_masks, 'spatial_query_neg_mask': neg_masks})
 
-        for i in range(self.interactive_iter):
+        for _ in range(self.interactive_iter):
             outputs = self.sem_seg_head.predictor(multi_scale_features, mask_features, target_queries=queries_grounding, extra=extra, task='spatial')
             extra.update(outputs)
             pred_smask = F.interpolate(outputs['prev_mask'], images.tensor.shape[-2:], mode='bicubic')
@@ -455,8 +413,10 @@ class GeneralizedSEEM(nn.Module):
             extra.update(self.prepare_next_spaital_mask(extra, batched_inputs))
 
         all_batch_shape_iou = torch.stack(all_batch_shape_iou)
-        processed_results = [{"mask_iou": all_batch_shape_iou[:,i]} for i in range(len(all_batch_shape_iou[0]))]
-        return processed_results
+        return [
+            {"mask_iou": all_batch_shape_iou[:, i]}
+            for i in range(len(all_batch_shape_iou[0]))
+        ]
 
     def evaluate_referring_image(self, batched_inputs, extra={}):
         assert self.task_switch['spatial']
@@ -808,8 +768,7 @@ class GeneralizedSEEM(nn.Module):
     def semantic_inference(self, mask_cls, mask_pred):
         mask_cls = F.softmax(mask_cls, dim=-1)[..., :-1]
         mask_pred = mask_pred.sigmoid()
-        semseg = torch.einsum("qc,qhw->chw", mask_cls, mask_pred)
-        return semseg
+        return torch.einsum("qc,qhw->chw", mask_cls, mask_pred)
 
     def panoptic_inference(self, mask_cls, mask_pred):
         scores, labels = F.softmax(mask_cls, dim=-1).max(-1)
@@ -828,15 +787,12 @@ class GeneralizedSEEM(nn.Module):
         panoptic_seg = torch.zeros((h, w), dtype=torch.int32, device=cur_masks.device)
         segments_info = []
 
-        current_segment_id = 0
-
-        if cur_masks.shape[0] == 0:
-            # We didn't detect any mask :(
-            return panoptic_seg, segments_info
-        else:
+        if cur_masks.shape[0] != 0:
             # take argmax
             cur_mask_ids = cur_prob_masks.argmax(0)
             stuff_memory_list = {}
+            current_segment_id = 0
+
             for k in range(cur_classes.shape[0]):
                 pred_class = cur_classes[k].item()
                 isthing = pred_class in self.metadata.thing_dataset_id_to_contiguous_id.values()
@@ -848,9 +804,8 @@ class GeneralizedSEEM(nn.Module):
                     if mask_area / original_area < self.overlap_threshold:
                         continue
 
-                    # merge stuff regions
                     if not isthing:
-                        if int(pred_class) in stuff_memory_list.keys():
+                        if int(pred_class) in stuff_memory_list:
                             panoptic_seg[mask] = stuff_memory_list[int(pred_class)]
                             continue
                         else:
@@ -862,12 +817,13 @@ class GeneralizedSEEM(nn.Module):
                     segments_info.append(
                         {
                             "id": current_segment_id,
-                            "isthing": bool(isthing),
+                            "isthing": isthing,
                             "category_id": int(pred_class),
                         }
                     )
 
-            return panoptic_seg, segments_info
+        # We didn't detect any mask :(
+        return panoptic_seg, segments_info
 
     def instance_inference(self, mask_cls, mask_pred, box_pred):
         # mask_pred is already processed to have the same shape as original input

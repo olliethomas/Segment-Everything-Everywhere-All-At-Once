@@ -29,12 +29,12 @@ from demo.seem.tasks import *
 def parse_option():
     parser = argparse.ArgumentParser('SEEM Demo', add_help=False)
     parser.add_argument('--conf_files', default="configs/seem/focall_unicl_lang_demo.yaml", metavar="FILE", help='path to config file', )
-    cfg = parser.parse_args()
-    return cfg
+    return parser.parse_args()
 
 '''
 build args
 '''
+
 cfg = parse_option()
 opt = load_opt_from_config_files([cfg.conf_files])
 opt = init_distributed(opt)
@@ -44,12 +44,16 @@ cur_model = 'None'
 if 'focalt' in cfg.conf_files:
     pretrained_pth = os.path.join("seem_focalt_v0.pt")
     if not os.path.exists(pretrained_pth):
-        os.system("wget {}".format("https://huggingface.co/xdecoder/SEEM/resolve/main/seem_focalt_v0.pt"))
+        os.system(
+            'wget https://huggingface.co/xdecoder/SEEM/resolve/main/seem_focalt_v0.pt'
+        )
     cur_model = 'Focal-T'
 elif 'focal' in cfg.conf_files:
     pretrained_pth = os.path.join("seem_focall_v0.pt")
     if not os.path.exists(pretrained_pth):
-        os.system("wget {}".format("https://huggingface.co/xdecoder/SEEM/resolve/main/seem_focall_v0.pt"))
+        os.system(
+            'wget https://huggingface.co/xdecoder/SEEM/resolve/main/seem_focall_v0.pt'
+        )
     cur_model = 'Focal-L'
 
 '''

@@ -18,9 +18,9 @@ def rand_sample(x, divisor, max_len):
     # compute probability for each samle
     probs = torch.zeros_like(non_zero_point_index[0])
     for idx in mask_ids:
-        prob = 1./(len(mask_ids)*((non_zero_point_index[0:1]==idx).sum()))
+        prob = 1. / (len(mask_ids) * (non_zero_point_index[:1] == idx).sum())
         probs[non_zero_point_index[0]==idx] = prob
-    
+
     indices = torch.multinomial(probs, num_samples=min(max_len, len(probs)), replacement=False).sort()[0]
     non_zero_point_index = non_zero_point_index[:,indices]
     return non_zero_point_index # [n, 512]
@@ -28,9 +28,8 @@ def rand_sample(x, divisor, max_len):
 def rand_sample_plain(x, max_len):
     if x.shape[1] <= max_len:
         return x
-    else:
-        rand_idx = torch.randperm(x.shape[1])[:max_len]
-        return x[:,rand_idx]
+    rand_idx = torch.randperm(x.shape[1])[:max_len]
+    return x[:,rand_idx]
 
 def prepare_features(x, num_feature_levels, pe_layer, input_proj, level_embed):
     src = []

@@ -71,7 +71,7 @@ class SEEMDecoder(nn.Module):
         # positional encoding
         N_steps = hidden_dim // 2
         self.pe_layer = PositionEmbeddingSine(N_steps, normalize=True)
-        
+
         # define Transformer decoder here
         self.num_heads = nheads
         self.num_layers = dec_layers
@@ -115,12 +115,12 @@ class SEEMDecoder(nn.Module):
         self.query_feat = nn.Embedding(num_queries, hidden_dim)
         # learnable query p.e.
         self.query_embed = nn.Embedding(num_queries, hidden_dim)
-        
+
         # level embedding (we always use 3 scales)
         self.num_feature_levels = 3
         self.level_embed = nn.Embedding(self.num_feature_levels, hidden_dim)
         self.input_proj = nn.ModuleList()
-        
+
         for _ in range(self.num_feature_levels):
             if in_channels != hidden_dim or enforce_input_project:
                 self.input_proj.append(Conv2d(in_channels, hidden_dim, kernel_size=1))
@@ -142,7 +142,12 @@ class SEEMDecoder(nn.Module):
 
         if task_switch['spatial']:
             # spatial query
-            self.mask_sptial_embed = nn.ParameterList([nn.Parameter(torch.empty(hidden_dim, hidden_dim)) for x in range(3)])
+            self.mask_sptial_embed = nn.ParameterList(
+                [
+                    nn.Parameter(torch.empty(hidden_dim, hidden_dim))
+                    for _ in range(3)
+                ]
+            )
             trunc_normal_(self.mask_sptial_embed[0], std=.02)
             trunc_normal_(self.mask_sptial_embed[1], std=.02)
             trunc_normal_(self.mask_sptial_embed[2], std=.02)
@@ -162,11 +167,11 @@ class SEEMDecoder(nn.Module):
 
     @classmethod
     def from_config(cls, cfg, in_channels, lang_encoder, mask_classification, extra):
-        ret = {}
-
-        ret["lang_encoder"] = lang_encoder
-        ret["in_channels"] = in_channels
-        ret["mask_classification"] = mask_classification
+        ret = {
+            "lang_encoder": lang_encoder,
+            "in_channels": in_channels,
+            "mask_classification": mask_classification,
+        }
 
         enc_cfg = cfg['MODEL']['ENCODER']
         dec_cfg = cfg['MODEL']['DECODER']
@@ -200,7 +205,8 @@ class SEEMDecoder(nn.Module):
 
     def forward(self, x, mask_features, mask=None, target_queries=None, target_vlp=None, task='seg', extra={}):
         # x is a list of multi-scale feature
-        assert len(x) == self.num_feature_levels; del mask
+        assert len(x) == self.num_feature_levels
+        del mask
         spatial_extra_flag = 'spatial_query_pos_mask' in extra.keys() or task == 'refimg' or 'refimg_tokens' in extra
         grounding_extra_flag = 'grounding_tokens' in extra.keys()
         spatial_memory_flag = 'prev_mask' in extra.keys()
@@ -258,19 +264,19 @@ class SEEMDecoder(nn.Module):
                     non_zero_query_point[non_zero_query_mask] = 0
 
                     spatial_tokens = point_sample(src_mask_features.permute(2,3,0,1), non_zero_query_point.flip(dims=(2,)).type(src_mask_features.dtype), align_corners=True).permute(2,0,1)
-                    spatial_tokens[pos_neg_indicator==1] += self.pn_indicator.weight[0:1]
+                    spatial_tokens[pos_neg_indicator==1] += self.pn_indicator.weight[:1]
                     spatial_tokens[pos_neg_indicator==-1] += self.pn_indicator.weight[1:2]
 
                     src_spatial_queries += [spatial_tokens]
                     src_spatial_maskings += [non_zero_query_mask]
 
                 if 'refimg' in task:
-                    output_refimg = {}
-                    output_refimg['spatial_query_pos'] = spatial_query_pos
-                    output_refimg['spatial_query_neg'] = spatial_query_neg
-                    output_refimg['src_spatial_queries'] = src_spatial_queries
-                    output_refimg['src_spatial_maskings'] = src_spatial_maskings
-                    return output_refimg
+                    return {
+                        'spatial_query_pos': spatial_query_pos,
+                        'spatial_query_neg': spatial_query_neg,
+                        'src_spatial_queries': src_spatial_queries,
+                        'src_spatial_maskings': src_spatial_maskings,
+                    }
             else:
                 spatial_query_pos = extra['refimg_tokens']['spatial_query_pos']
                 spatial_query_neg = extra['refimg_tokens']['spatial_query_neg']
@@ -285,16 +291,16 @@ class SEEMDecoder(nn.Module):
             spatial_embed = self.spatial_embed.weight.unsqueeze(1).repeat(1, bs, 1)
             self.attention_data.set('memories_spatial', 'memories', spatial_output, spatial_embed)
 
-            # if 'queries_spatial' in extra:
-            #     self.attention_data.set('queries_spatial', 'queries', var=extra['queries_spatial'])
+                # if 'queries_spatial' in extra:
+                #     self.attention_data.set('queries_spatial', 'queries', var=extra['queries_spatial'])
 
-            # if spatial_memory_flag:
-            #     prev_mask = (extra['prev_mask'].sigmoid() > 0.5).detach()
-            #     non_zero_query_point = [rand_sample((m.nonzero()[:,1:]/divisor).t(), self.max_spatial_len[-1]).t() for m in prev_mask]
-            #     non_zero_query_point = nn.utils.rnn.pad_sequence(non_zero_query_point, padding_value=-1).permute(1,0,2)
-            #     non_zero_query_mask = (non_zero_query_point.sum(dim=-1) < 0)
-            #     spatial_memory = point_sample(mask_features, non_zero_query_point.flip(dims=(2,)).type(mask_features.dtype), align_corners=True)
-            #     spatial_memory = torch.stack([x[m].mean(dim=0, keepdim=True) for x, m in zip(spatial_memory.transpose(1,2), ~non_zero_query_mask)]).transpose(0,1).nan_to_num()
+                # if spatial_memory_flag:
+                #     prev_mask = (extra['prev_mask'].sigmoid() > 0.5).detach()
+                #     non_zero_query_point = [rand_sample((m.nonzero()[:,1:]/divisor).t(), self.max_spatial_len[-1]).t() for m in prev_mask]
+                #     non_zero_query_point = nn.utils.rnn.pad_sequence(non_zero_query_point, padding_value=-1).permute(1,0,2)
+                #     non_zero_query_mask = (non_zero_query_point.sum(dim=-1) < 0)
+                #     spatial_memory = point_sample(mask_features, non_zero_query_point.flip(dims=(2,)).type(mask_features.dtype), align_corners=True)
+                #     spatial_memory = torch.stack([x[m].mean(dim=0, keepdim=True) for x, m in zip(spatial_memory.transpose(1,2), ~non_zero_query_mask)]).transpose(0,1).nan_to_num()
 
         if self.task_switch['grounding'] and grounding_extra_flag:
             # Get grounding tokens
@@ -361,8 +367,8 @@ class SEEMDecoder(nn.Module):
         outputs_class = self.lang_encoder.compute_similarity(class_embed)
         mask_embed = self.mask_embed(decoder_output)
         outputs_mask = torch.einsum("bqc,bchw->bqhw", mask_embed, mask_features)
-        
-        outputs_bbox = [None for i in range(len(outputs_mask))]
+
+        outputs_bbox = [None for _ in range(len(outputs_mask))]
         if self.task_switch['bbox']:
             outputs_bbox = self.bbox_embed(decoder_output)
 
@@ -377,7 +383,7 @@ class SEEMDecoder(nn.Module):
 
         outputs_caption = class_embed
 
-        results = {
+        return {
             "attn_mask": attn_mask,
             "predictions_class": outputs_class,
             "predictions_mask": outputs_mask,
@@ -385,7 +391,6 @@ class SEEMDecoder(nn.Module):
             "predictions_caption": outputs_caption,
             "predictions_maskemb": mask_embed,
         }
-        return results
 
 @register_decoder
 def get_seem_interface(cfg, in_channels, lang_encoder, mask_classification, extra):

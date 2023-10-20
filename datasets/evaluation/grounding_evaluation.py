@@ -90,14 +90,14 @@ class GroundingEvaluator(DatasetEvaluator):
 
         results = {}
         for idx in range(len(self.eval_seg_iou_list)):
-            result_str = 'precision@{}'.format(self.eval_seg_iou_list[idx])
+            result_str = f'precision@{self.eval_seg_iou_list[idx]}'
             results[result_str] = (self.seg_correct[idx]*100 / self.seg_total).item()
         results['cIoU'] = (self.cum_I*100./self.cum_U).item()
         results['mIoU'] = (self.mIoU*100./self.seg_total).item()
 
         if self._compute_box:
             for idx in range(len(self.eval_seg_iou_list)):
-                result_str = 'precisionB@{}'.format(self.eval_seg_iou_list[idx])
+                result_str = f'precisionB@{self.eval_seg_iou_list[idx]}'
                 results[result_str] = (self.seg_correct_box[idx]*100 / self.seg_total).item()
             results['mBIoU'] = (self.mIoU_box*100./self.seg_total).item()
 

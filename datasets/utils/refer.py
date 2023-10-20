@@ -48,7 +48,7 @@ class REFER:
         # provide data_root folder which contains refclef, refcoco, refcoco+ and refcocog
         # also provide dataset name and splitBy information
         # e.g., dataset = 'refcoco', splitBy = 'unc'
-        print('loading dataset {} into memory...'.format(dataset))
+        print(f'loading dataset {dataset} into memory...')
         self.ROOT_DIR = osp.abspath(osp.dirname(__file__))
         self.DATA_DIR = osp.join(data_root, dataset)
         if dataset in ['refcoco', 'refcoco+', 'refcocog']:
@@ -56,16 +56,13 @@ class REFER:
         elif dataset == 'refclef':
             self.IMAGE_DIR = osp.join(data_root, 'images/saiapr_tc-12')
         else:
-            print('No refer dataset is called [{}]'.format(dataset))
+            print(f'No refer dataset is called [{dataset}]')
             sys.exit()
 
         # load refs from data/dataset/refs(dataset).json
         tic = time.time()
-        ref_file = osp.join(self.DATA_DIR, 'refs('+splitBy+').p')        
-        self.data = {}
-        self.data['dataset'] = dataset
-        self.data['refs'] = pickle.load(open(ref_file, 'rb'))
-
+        ref_file = osp.join(self.DATA_DIR, f'refs({splitBy}).p')
+        self.data = {'dataset': dataset, 'refs': pickle.load(open(ref_file, 'rb'))}
         # load annotations from data/dataset/instances.json
         instances_file = osp.join(self.DATA_DIR, 'instances.json')
         instances = json.load(open(instances_file, 'r'))
@@ -149,28 +146,30 @@ class REFER:
         if len(image_ids) == len(cat_ids) == len(ref_ids) == len(split) == 0:
             refs = self.data['refs']
         else:
-            if not len(image_ids) == 0:
+            if len(image_ids) != 0:
                 refs = [self.imgToRefs[image_id] for image_id in image_ids]
             else:
                 refs = self.data['refs']
-            if not len(cat_ids) == 0:
+            if len(cat_ids) != 0:
                 refs = [ref for ref in refs if ref['category_id'] in cat_ids]
-            if not len(ref_ids) == 0:
+            if len(ref_ids) != 0:
                 refs = [ref for ref in refs if ref['ref_id'] in ref_ids]
-            if not len(split) == 0:
-                if split in ['testA', 'testB', 'testC']:
-                    # we also consider testAB, testBC, ...
-                    refs = [ref for ref in refs if split[-1] in ref['split']]
-                elif split in ['testAB', 'testBC', 'testAC']:
-                    # rarely used I guess...
-                    refs = [ref for ref in refs if ref['split'] == split]
-                elif split == 'test':
-                    refs = [ref for ref in refs if 'test' in ref['split']]
-                elif split == 'train' or split == 'val':
-                    refs = [ref for ref in refs if ref['split'] == split]
-                else:
-                    print('No such split [{}]'.format(split))
-                    sys.exit()
+        if len(split) != 0:
+            if split in ['testA', 'testB', 'testC']:
+                # we also consider testAB, testBC, ...
+                refs = [ref for ref in refs if split[-1] in ref['split']]
+            elif (
+                split in ['testAB', 'testBC', 'testAC']
+                or split != 'test'
+                and split in ['train', 'val']
+            ):
+                # rarely used I guess...
+                refs = [ref for ref in refs if ref['split'] == split]
+            elif split == 'test':
+                refs = [ref for ref in refs if 'test' in ref['split']]
+            else:
+                print(f'No such split [{split}]')
+                sys.exit()
         ref_ids = [ref['ref_id'] for ref in refs]
         return ref_ids
 
@@ -182,29 +181,29 @@ class REFER:
         if len(image_ids) == len(cat_ids) == len(ref_ids) == 0:
             ann_ids = [ann['id'] for ann in self.data['annotations']]
         else:
-            if not len(image_ids) == 0:
+            if len(image_ids) != 0:
                 lists = [self.imgToAnns[image_id]
                          for image_id in image_ids if image_id in self.imgToAnns]  # list of [anns]
                 anns = list(itertools.chain.from_iterable(lists))
             else:
                 anns = self.data['annotations']
-            if not len(cat_ids) == 0:
+            if len(cat_ids) != 0:
                 anns = [ann for ann in anns if ann['category_id'] in cat_ids]
             ann_ids = [ann['id'] for ann in anns]
-            if not len(ref_ids) == 0:
-                ids = set(ann_ids).intersection(
-                    set([self.Refs[ref_id]['ann_id'] for ref_id in ref_ids]))
+        if len(ref_ids) != 0:
+            ids = set(ann_ids).intersection(
+                {self.Refs[ref_id]['ann_id'] for ref_id in ref_ids}
+            )
         return ann_ids
 
     def getImgIds(self, ref_ids=[]):
         ref_ids = ref_ids if type(ref_ids) == list else [ref_ids]
 
-        if not len(ref_ids) == 0:
-            image_ids = list(set([self.Refs[ref_id]['image_id']
-                             for ref_id in ref_ids]))
-        else:
-            image_ids = self.Imgs.keys()
-        return image_ids
+        return (
+            list({self.Refs[ref_id]['image_id'] for ref_id in ref_ids})
+            if len(ref_ids) != 0
+            else self.Imgs.keys()
+        )
 
     def getCatIds(self):
         return self.Cats.keys()
@@ -218,7 +217,7 @@ class REFER:
     def loadAnns(self, ann_ids=[]):
         if type(ann_ids) == list:
             return [self.Anns[ann_id] for ann_id in ann_ids]
-        elif type(ann_ids) == int or type(ann_ids) == unicode:
+        elif type(ann_ids) in [int, unicode]:
             return [self.Anns[ann_ids]]
 
     def loadImgs(self, image_ids=[]):
@@ -246,15 +245,15 @@ class REFER:
         ax.imshow(I)
         # show refer expression
         for sid, sent in enumerate(ref['sentences']):
-            print('{}. {}'.format(sid+1, sent['sent']))
+            print(f"{sid + 1}. {sent['sent']}")
         # show segmentations
         if seg_box == 'seg':
             ann_id = ref['ann_id']
             ann = self.Anns[ann_id]
-            polygons = []
-            color = []
-            c = 'none'
             if type(ann['segmentation'][0]) == list:
+                polygons = []
+                color = []
+                c = 'none'
                 # polygon used for refcoco*
                 for seg in ann['segmentation']:
                     poly = np.array(seg).reshape((len(seg)/2, 2))
@@ -275,7 +274,6 @@ class REFER:
                 for i in range(3):
                     img[:, :, i] = color_mask[i]
                 ax.imshow(np.dstack((img, m*0.5)))
-        # show bounding-box
         elif seg_box == 'box':
             ann_id = ref['ann_id']
             ann = self.Anns[ann_id]
@@ -361,7 +359,7 @@ if __name__ == '__main__':
             continue
 
         pprint(ref)
-        print('The label is {}.'.format(refer.Cats[ref['category_id']]))
+        print(f"The label is {refer.Cats[ref['category_id']]}.")
 
         # plt.figure()
         # refer.showRef(ref, seg_box='box')

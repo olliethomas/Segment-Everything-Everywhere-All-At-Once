@@ -23,10 +23,7 @@ logger = logging.getLogger(__name__)
 class MySequential(nn.Sequential):
     def forward(self, *inputs):
         for module in self._modules.values():
-            if type(inputs) == tuple:
-                inputs = module(*inputs)
-            else:
-                inputs = module(inputs)
+            inputs = module(*inputs) if type(inputs) == tuple else module(inputs)
         return inputs
 
 
@@ -39,11 +36,11 @@ class PreNorm(nn.Module):
 
     def forward(self, x, *args, **kwargs):
         shortcut = x
-        if self.norm != None:
-            x, size = self.fn(self.norm(x), *args, **kwargs)
-        else:
+        if self.norm is None:
             x, size = self.fn(x, *args, **kwargs)
 
+        else:
+            x, size = self.fn(self.norm(x), *args, **kwargs)
         if self.drop_path:
             x = self.drop_path(x)
 
@@ -213,8 +210,11 @@ class ChannelBlock(nn.Module):
 def window_partition(x, window_size: int):
     B, H, W, C = x.shape
     x = x.view(B, H // window_size, window_size, W // window_size, window_size, C)
-    windows = x.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, C)
-    return windows
+    return (
+        x.permute(0, 1, 3, 2, 4, 5)
+        .contiguous()
+        .view(-1, window_size, window_size, C)
+    )
 
 
 def window_reverse(windows, window_size: int, H: int, W: int):
@@ -450,10 +450,7 @@ class DaViT(nn.Module):
             for name, _ in m.named_parameters():
                 if name in ['bias']:
                     nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.weight, 1.0)
-            nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.BatchNorm2d):
+        elif isinstance(m, (nn.LayerNorm, nn.BatchNorm2d)):
             nn.init.constant_(m.weight, 1.0)
             nn.init.constant_(m.bias, 0)
 
@@ -478,7 +475,7 @@ class DaViT(nn.Module):
         full_key_mappings = {}
         for k in pretrained_dict.keys():
             old_k = k
-            for remap_key in remap_keys.keys():
+            for remap_key in remap_keys:
                 if remap_key in k:
                     print(f'=> Repace {remap_key} with {remap_keys[remap_key]}')
                     k = k.replace(remap_key, remap_keys[remap_key])
@@ -528,11 +525,11 @@ class DaViT(nn.Module):
                 x, input_size = block(x, input_size)
             if i in self.out_indices:
                 out = x.view(-1, *input_size, self.embed_dims[i]).permute(0, 3, 1, 2).contiguous()
-                outs["res{}".format(i + 2)] = out       
+                outs[f"res{i + 2}"] = out       
 
         if len(self.out_indices) == 0:
             outs["res5"] = x.view(-1, *input_size, self.embed_dims[-1]).permute(0, 3, 1, 2).contiguous()
-        
+
         return outs
 
     def forward(self, x):
@@ -589,13 +586,9 @@ class D2DaViT(DaViT, Backbone):
         assert (
             x.dim() == 4
         ), f"SwinTransformer takes an input of shape (N, C, H, W). Got {x.shape} instead!"
-        outputs = {}
         y = super().forward(x)
 
-        for k in y.keys():
-            if k in self._out_features:
-                outputs[k] = y[k]
-        return outputs
+        return {k: y[k] for k in y.keys() if k in self._out_features}
 
     def output_shape(self):
         return {

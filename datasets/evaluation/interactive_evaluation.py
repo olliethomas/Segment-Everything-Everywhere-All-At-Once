@@ -75,7 +75,9 @@ class InteractiveEvaluator(DatasetEvaluator):
         for key, value in noc_list_sum.items():
             pred_noc[key] = value / num_samples
 
-        pred_noc['iou_max_iter'] = sum([x.item() for x in iou_before_max_gather]) / num_samples
+        pred_noc['iou_max_iter'] = (
+            sum(x.item() for x in iou_before_max_gather) / num_samples
+        )
         return pred_noc
 
     def evaluate(self):

@@ -66,11 +66,10 @@ class ClassificationEvaluator(DatasetEvaluator):
             top5_sum = self.top5.sum
             count = self.top1.count
 
-        results = {}
         scores = {
             'top1': top1_sum / count,
             "top5": top5_sum / count
         }
-        results['class'] = scores
+        results = {'class': scores}
         self._logger.info(results)
         return results

@@ -73,7 +73,7 @@ class PascalVOCSegDatasetMapperIX:
     @classmethod
     def from_config(cls, cfg, is_train=True, dataset_name=''):
         shape_sampler = build_shape_sampler(cfg, is_train=is_train, mode=dataset_name.split('_')[-1])
-        ret = {
+        return {
             "is_train": is_train,
             "dataset_name": dataset_name,
             "min_size_test": cfg['INPUT']['MIN_SIZE_TEST'],
@@ -81,7 +81,6 @@ class PascalVOCSegDatasetMapperIX:
             "shape_sampler": shape_sampler,
             "grounding": cfg['STROKE_SAMPLER']['EVAL']['GROUNDING'],
         }
-        return ret
 
     def get_pascal_labels(self,):
         """Load the mapping that associates pascal classes with label colors
@@ -171,8 +170,8 @@ class PascalVOCSegDatasetMapperIX:
 
         spatial_query_utils = self.shape_sampler(instances) # [n,c,h,w]
 
-        for i in range(len(instances_mask_byid)):
-            instances_mask_byid[i][instances_mask == self.ignore_id] = -1
+        for item in instances_mask_byid:
+            item[instances_mask == self.ignore_id] = -1
         gt_masks_orisize = torch.stack([torch.from_numpy(m) for m in instances_mask_byid])
 
         dataset_dict['spatial_query'] = spatial_query_utils

@@ -35,13 +35,7 @@ def build_transform_gen(cfg, is_train):
     # The scope of vlp dataset may not need any augmentation.
     cfg_input = cfg['INPUT']
     image_size = cfg_input['IMAGE_SIZE']
-    augmentation = []
-
-    augmentation.extend([
-        T.Resize((image_size, image_size)),
-    ])
-    
-    return augmentation
+    return [T.Resize((image_size, image_size))]
 
 
 # This is specifically designed for the COCO dataset.
@@ -83,9 +77,7 @@ class VLPreDatasetMapper:
         """
         self.tfm_gens = tfm_gens
         logging.getLogger(__name__).info(
-            "[PretrainDatasetMapper] Full TransformGens used in training: {}".format(
-                str(self.tfm_gens)
-            )
+            f"[PretrainDatasetMapper] Full TransformGens used in training: {str(self.tfm_gens)}"
         )
 
         self.img_format = image_format
@@ -106,7 +98,7 @@ class VLPreDatasetMapper:
         max_token_num = cfg['MODEL']['TEXT']['CONTEXT_LENGTH']
         device = cfg['device']
 
-        ret = {
+        return {
             "is_train": is_train,
             "dataset_name": dataset_name,
             "tfm_gens": tfm_gens,
@@ -115,7 +107,6 @@ class VLPreDatasetMapper:
             "max_token_num": max_token_num,
             "device": device,
         }
-        return ret
 
     def get_image(self, inp):
         image_bytes = io.BytesIO(inp)

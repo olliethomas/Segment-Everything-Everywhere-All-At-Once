@@ -14,9 +14,7 @@ def get_tag(tokenized, tags):
         tags = [tags]
     ret = []
     for (word, pos) in nltk.pos_tag(tokenized):
-        for tag in tags:
-            if pos == tag:
-                ret.append(word)
+        ret.extend(word for tag in tags if pos == tag)
     return ret
 
 def get_noun_phrase(tokenized):

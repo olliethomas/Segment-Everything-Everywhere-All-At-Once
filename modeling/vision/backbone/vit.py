@@ -531,12 +531,8 @@ class D2ViT(ImageEncoderViT, Backbone):
         assert (
             x.dim() == 4
         ), f"SwinTransformer takes an input of shape (N, C, H, W). Got {x.shape} instead!"
-        outputs = {}
         y = super().forward(x)
-        for k in y.keys():
-            if k in self._out_features:
-                outputs[k] = y[k]
-        return outputs
+        return {k: y[k] for k in y.keys() if k in self._out_features}
 
     def output_shape(self):
         return {

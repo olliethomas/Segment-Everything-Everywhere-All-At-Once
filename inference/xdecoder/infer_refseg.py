@@ -55,8 +55,7 @@ def main(args=None):
     model = BaseModel(opt, build_model(opt)).from_pretrained(pretrained_pth).eval().cuda()
     model.model.sem_seg_head.predictor.lang_encoder.get_text_embeddings(["background", "background"], is_eval=False)
 
-    t = []
-    t.append(transforms.Resize(512, interpolation=Image.BICUBIC))
+    t = [transforms.Resize(512, interpolation=Image.BICUBIC)]
     transform = transforms.Compose(t)
 
     metadata = MetadataCatalog.get('ade20k_panoptic_train')

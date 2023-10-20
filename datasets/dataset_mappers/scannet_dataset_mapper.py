@@ -57,20 +57,18 @@ class ScanNetSegDatasetMapper:
         self.pixel_mean = torch.tensor(mean)[:,None,None]
         self.pixel_std = torch.tensor(std)[:,None,None]
 
-        t = []
-        t.append(transforms.Resize(self.min_size_test, interpolation=Image.BICUBIC))
+        t = [transforms.Resize(self.min_size_test, interpolation=Image.BICUBIC)]
         self.transform = transforms.Compose(t)
     
     @classmethod
     def from_config(cls, cfg, is_train=True):
-        ret = {
+        return {
             "is_train": is_train,
             "min_size_test": cfg['INPUT']['MIN_SIZE_TEST'],
             "max_size_test": cfg['INPUT']['MAX_SIZE_TEST'],
             "mean": cfg['INPUT']['PIXEL_MEAN'],
             "std": cfg['INPUT']['PIXEL_STD'],
         }
-        return ret
     
     def read_semseg(self, file_name):
         if '.png' in file_name:

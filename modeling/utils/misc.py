@@ -169,11 +169,7 @@ def _onnx_nested_tensor_from_tensor_list(tensor_list: List[Tensor]) -> NestedTen
     return NestedTensor(tensor, mask=mask)
 
 def is_dist_avail_and_initialized():
-    if not dist.is_available():
-        return False
-    if not dist.is_initialized():
-        return False
-    return True
+    return False if not dist.is_available() else bool(dist.is_initialized())
 
 # TODO: add background to 
 def get_class_names(name):
@@ -208,7 +204,7 @@ def get_class_names(name):
     elif 'vlp' in name:
         return ["background"]
     else:
-        assert False, "text dataset name {} is not defined".format(name)
+        assert False, f"text dataset name {name} is not defined"
 
 def get_iou(gt_masks, pred_masks, ignore_label=-1):
     rev_ignore_mask = ~(gt_masks == ignore_label)
@@ -216,8 +212,7 @@ def get_iou(gt_masks, pred_masks, ignore_label=-1):
     n,h,w = gt_masks.shape
     intersection = ((gt_masks & pred_masks) & rev_ignore_mask).reshape(n,h*w).sum(dim=-1)
     union = ((gt_masks | pred_masks) & rev_ignore_mask).reshape(n,h*w).sum(dim=-1)
-    ious = (intersection / union)
-    return ious
+    return (intersection / union)
 
 class Spatial_ImageList(object):
     """
@@ -283,7 +278,7 @@ class Spatial_ImageList(object):
         Returns:
             an `Spatial_ImageList`.
         """
-        assert len(tensors) > 0
+        assert tensors
         assert isinstance(tensors, (tuple, list))
         for t in tensors:
             assert isinstance(t, torch.Tensor), type(t)
@@ -301,9 +296,8 @@ class Spatial_ImageList(object):
         # handle weirdness of scripting and tracing ...
         if torch.jit.is_scripting():
             max_size: List[int] = max_size.to(dtype=torch.long).tolist()
-        else:
-            if torch.jit.is_tracing():
-                image_sizes = image_sizes_tensor
+        elif torch.jit.is_tracing():
+            image_sizes = image_sizes_tensor
 
         if len(tensors) == 1:
             # This seems slightly (2%) faster.
